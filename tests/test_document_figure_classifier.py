@@ -38,7 +38,7 @@ def init() -> dict:
 
     # Download models from HF 
     init["artifact_path"] = snapshot_download(
-        repo_id="ds4sd/DocumentFigureClassifier", revision="v1.0.0"
+        repo_id="ds4sd/DocumentFigureClassifier", revision="v1.0.1"
     )
 
     return init
