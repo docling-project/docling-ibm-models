@@ -32,6 +32,7 @@ class RepeatTokenStoppingCriteria(StoppingCriteria):
         last_tokens = input_ids[0, -self.repeat_count :]
         return bool((last_tokens == last_tokens[0]).all())
 
+
 class CodeFormulaPredictor:
     """
     Code and Formula Predictor using a multi-modal vision-language model.
@@ -228,7 +229,8 @@ class CodeFormulaPredictor:
         else:
             with torch.autocast(device_type=self._device, dtype=torch.bfloat16):
                 output_ids_list = self._model.generate(
-                    prompt_ids,
+                    input_ids=prompt_ids,
+                    attention_mask=attention_mask,
                     images=images_tensor,
                     do_sample=do_sample,
                     temperature=temperature,
