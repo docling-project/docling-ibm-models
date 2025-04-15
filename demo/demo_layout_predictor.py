@@ -118,10 +118,7 @@ def main(args):
     Path(viz_dir).mkdir(parents=True, exist_ok=True)
 
     # Download models from HF
-    download_path = snapshot_download(
-        repo_id="ds4sd/docling-models", revision="v2.1.0"
-    )
-    artifact_path = os.path.join(download_path, "model_artifacts/layout")
+    artifact_path = snapshot_download(repo_id="ds4sd/docling-layout-heron", revision="main")
 
     # Test the LayoutPredictor
     demo(logger, artifact_path, device, num_threads, img_dir, viz_dir)

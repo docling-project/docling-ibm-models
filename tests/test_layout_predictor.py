@@ -31,12 +31,12 @@ def init() -> dict:
             "image_size": 640,
             "threshold": 0.6,
         },
-        "pred_bboxes": 9,
+        # "pred_bboxes": 9,
+        "pred_bboxes": 12,
     }
 
     # Download models from HF
-    download_path = snapshot_download(repo_id="ds4sd/docling-models", revision="v2.1.0")
-    artifact_path = os.path.join(download_path, "model_artifacts/layout")
+    artifact_path = snapshot_download(repo_id="ds4sd/docling-layout-heron", revision="main")
 
     # Add the missing config keys
     init["artifact_path"] = artifact_path

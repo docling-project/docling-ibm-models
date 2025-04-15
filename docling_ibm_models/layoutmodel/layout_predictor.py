@@ -153,8 +153,7 @@ class LayoutPredictor:
             result["scores"], result["labels"], result["boxes"]
         ):
             score = float(score.item())
-
-            label_id = int(label_id.item()) + 1  # Advance the label_id
+            label_id = int(label_id.item())
             label_str = self._classes_map[label_id]
 
             # Filter out blacklisted classes
