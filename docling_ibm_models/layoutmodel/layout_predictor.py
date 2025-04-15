@@ -11,7 +11,7 @@ import numpy as np
 import torch
 import torchvision.transforms as T
 from PIL import Image
-from transformers import RTDetrForObjectDetection, RTDetrImageProcessor
+from transformers import RTDetrImageProcessor, RTDetrV2ForObjectDetection
 
 _log = logging.getLogger(__name__)
 
@@ -86,7 +86,7 @@ class LayoutPredictor:
         processor_config = os.path.join(artifact_path, "preprocessor_config.json")
         model_config = os.path.join(artifact_path, "config.json")
         self._image_processor = RTDetrImageProcessor.from_json_file(processor_config)
-        self._model = RTDetrForObjectDetection.from_pretrained(
+        self._model = RTDetrV2ForObjectDetection.from_pretrained(
             artifact_path, config=model_config
         ).to(self._device)
         self._model.eval()
