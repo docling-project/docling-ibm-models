@@ -468,6 +468,80 @@ class MatchingPostProcessor:
         return table_cells
 
     def _align_table_cells_to_pdf(self, table_cells, pdf_cells, matches):
+        """
+        Align table cell bboxes with good matches to encapsulate matching pdf cells
+        """
+        pdf_cell_dict = {pdf_cell["id"]: pdf_cell["bbox"] for pdf_cell in pdf_cells}
+        table_cell_dict = {cell["cell_id"]: cell for cell in table_cells}
+
+        # Track unique cells we're going to add
+        processed_cells = set()
+
+        # First pass - create initial new_table_cells with aligned bboxes
+        new_table_cells = []
+
+        for pdf_cell_id, match_list in matches.items():
+            # Extract unique table cell ids from match_list
+            table_cell_ids = set(int(match["table_cell_id"]) for match in match_list)
+
+            # Get bbox of pdf_cell
+            pdf_cell_bbox = pdf_cell_dict.get(int(pdf_cell_id))
+            if not pdf_cell_bbox:
+                continue
+
+            # Process each unique table cell
+            for cell_id in table_cell_ids:
+                if cell_id in processed_cells:
+                    continue
+
+                table_cell = table_cell_dict.get(cell_id)
+                if not table_cell:
+                    continue
+
+                # Create new table cell with aligned bbox
+                new_table_cell = table_cell.copy()
+                new_table_cell["bbox"] = list(pdf_cell_bbox)
+
+                # Set cell class
+                if "cell_class" not in new_table_cell:
+                    new_table_cell["cell_class"] = "2"
+
+                new_table_cells.append(new_table_cell)
+                processed_cells.add(cell_id)
+
+        # Second pass - aggregate bboxes for duplicate cells
+        cell_to_bboxes = {}
+        for cell in new_table_cells:
+            cell_id = cell["cell_id"]
+            if cell_id not in cell_to_bboxes:
+                cell_to_bboxes[cell_id] = []
+            cell_to_bboxes[cell_id].append(cell["bbox"])
+
+        # Create final clean table cells
+        clean_table_cells = []
+        processed_ids = set()
+
+        for cell in new_table_cells:
+            cell_id = cell["cell_id"]
+            if cell_id in processed_ids:
+                continue
+
+            bboxes = cell_to_bboxes[cell_id]
+            if len(bboxes) > 1:
+                # Merge bboxes
+                x1s = [bbox[0] for bbox in bboxes]
+                y1s = [bbox[1] for bbox in bboxes]
+                x2s = [bbox[2] for bbox in bboxes]
+                y2s = [bbox[3] for bbox in bboxes]
+
+                cell["bbox"] = [min(x1s), min(y1s), max(x2s), max(y2s)]
+
+            clean_table_cells.append(cell)
+            processed_ids.add(cell_id)
+
+        return clean_table_cells
+
+    def _align_table_cells_to_pdf_old(self, table_cells, pdf_cells, matches):
         r"""
         USED in 8.a step
         NOT USED in 6. step
