@@ -21,7 +21,7 @@ packages = [
 ]
 
 [tool.poetry.dependencies]
-python = "^3.9"
+python = "^3.9.2"
 torch = "^2.2.2"
 torchvision = "^0"
 transformers = [
