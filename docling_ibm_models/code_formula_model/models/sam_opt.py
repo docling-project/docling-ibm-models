@@ -82,10 +82,10 @@ class SamOPTModel(OPTModel):
             inputs_embeds = self.embed_tokens(input_ids)
 
         vision_tower = getattr(self, "vision_tower", None)
-        im_start_token = getattr(self.config, "im_start_token", -1)
+        im_start_token = getattr(self.config, "im_start_token", -1)  # type: ignore
 
-        if input_ids.shape[1] != 1 or self.training:
-            with torch.set_grad_enabled(self.training):
+        if input_ids.shape[1] != 1 or self.training:  # type: ignore
+            with torch.set_grad_enabled(self.training):  # type: ignore
                 assert vision_tower is not None
                 image_features = vision_tower(images)
                 image_features = image_features.flatten(2).permute(0, 2, 1)
@@ -118,7 +118,7 @@ class SamOPTModel(OPTModel):
 
             inputs_embeds = torch.stack(new_input_embeds, dim=0)  # type: ignore
 
-        return super(SamOPTModel, self).forward(
+        return super(SamOPTModel, self).forward(  # type: ignore
             input_ids=None,
             attention_mask=attention_mask,
             past_key_values=past_key_values,
@@ -165,12 +165,12 @@ class SamOPTForCausalLM(OPTForCausalLM):
         output_attentions = (
             output_attentions
             if output_attentions is not None
-            else self.config.output_attentions
+            else self.config.output_attentions  # type: ignore
         )
         output_hidden_states = (
             output_hidden_states
             if output_hidden_states is not None
-            else self.config.output_hidden_states
+            else self.config.output_hidden_states  # type: ignore
         )
 
         outputs = self.model(
