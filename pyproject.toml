@@ -32,7 +32,7 @@ numpy = [
     { version = ">=1.24.4,<3.0.0", markers = 'sys_platform != "darwin" or platform_machine != "x86_64"' },
     { version = ">=1.24.4,<2.0.0", markers = 'sys_platform == "darwin" and platform_machine == "x86_64"' },
 ]
-jsonlines = "^3.1.0"
+jsonlines = "^4.0.0"
 Pillow = ">=10.0.0,<12.0.0"
 tqdm = "^4.64.0"
 opencv-python-headless = "^4.6.0.66"
