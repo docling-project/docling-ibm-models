@@ -24,11 +24,15 @@ packages = [
 python = "^3.9"
 torch = "^2.2.2"
 torchvision = "^0"
-transformers = [
-  {markers = "python_version >= '3.13' and (sys_platform != 'darwin' or platform_machine != 'x86_64')", version = "^4.47.0"},
-  {markers = "sys_platform != 'darwin' or platform_machine != 'x86_64'", version = "^4.42.0"},
-  {markers = "python_version < '3.13' and sys_platform == 'darwin' and platform_machine == 'x86_64'", version = "~4.42.0"}
-]
+
+# DFINE transformers implementation has not been released yet. Interim solution: Pin to the source
+# transformers = [
+#   {markers = "python_version >= '3.13' and (sys_platform != 'darwin' or platform_machine != 'x86_64')", version = "^4.47.0"},
+#   {markers = "sys_platform != 'darwin' or platform_machine != 'x86_64'", version = "^4.42.0"},
+#   {markers = "python_version < '3.13' and sys_platform == 'darwin' and platform_machine == 'x86_64'", version = "~4.42.0"}
+# ]
+transformers = { git = "https://github.com/huggingface/transformers.git" }
+
 numpy = [
     { version = ">=1.24.4,<3.0.0", markers = 'sys_platform != "darwin" or platform_machine != "x86_64"' },
     { version = ">=1.24.4,<2.0.0", markers = 'sys_platform == "darwin" and platform_machine == "x86_64"' },
