@@ -133,7 +133,6 @@ class LayoutPredictor:
             page_img = Image.fromarray(orig_img).convert("RGB")
         else:
             raise TypeError("Not supported input image format")
-
         resize = {"height": self._image_size, "width": self._image_size}
         
         inputs = self._image_processor(
