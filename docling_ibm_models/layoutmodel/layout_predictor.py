@@ -131,13 +131,6 @@ class LayoutPredictor:
             page_img = orig_img.convert("RGB")
         elif isinstance(orig_img, np.ndarray):
             page_img = Image.fromarray(orig_img).convert("RGB")
-        elif isinstance(orig_img, List):
-            if isinstance(orig_img[0], Image.Image):
-                page_img = [img.convert("RGB") for img in orig_img]
-            elif isinstance(orig_img[0], np.ndarray):
-                page_img = [Image.fromarray(img).convert("RGB") for img in orig_img]
-            else:
-                raise TypeError("Not supported input image format")
         else:
             raise TypeError("Not supported input image format")
 
