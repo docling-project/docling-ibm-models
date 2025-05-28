@@ -15,7 +15,7 @@ jobs:
         python-version: ['3.12']
     environment:
       name: pypi
-      url: https://pypi.org/p/docling-eval
+      url: https://pypi.org/p/docling-ibm-models
     permissions:
       id-token: write  # IMPORTANT: mandatory for trusted publishing
     steps:
