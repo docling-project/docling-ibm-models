@@ -52,7 +52,7 @@ class SamOptConfig(OPTConfig):
 
 
 class SamOPTModel(OPTModel):
-    config_class = SamOptConfig
+    config_class = SamOptConfig  # type: ignore
 
     def __init__(self, config: OPTConfig):
         super(SamOPTModel, self).__init__(config)
@@ -131,7 +131,7 @@ class SamOPTModel(OPTModel):
 
 
 class SamOPTForCausalLM(OPTForCausalLM):
-    config_class = SamOptConfig
+    config_class = SamOptConfig  # type: ignore
 
     def __init__(self, config):
         super(OPTForCausalLM, self).__init__(config)
