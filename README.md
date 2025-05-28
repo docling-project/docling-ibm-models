@@ -1,6 +1,6 @@
 [![PyPI version](https://img.shields.io/pypi/v/docling-ibm-models)](https://pypi.org/project/docling-ibm-models/)
 [![PyPI - Python Version](https://img.shields.io/pypi/pyversions/docling-ibm-models)](https://pypi.org/project/docling-ibm-models/)
-[![Poetry](https://img.shields.io/endpoint?url=https://python-poetry.org/badge/v0.json)](https://python-poetry.org/)
+[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Imports: isort](https://img.shields.io/badge/%20imports-isort-%231674b1?style=flat&labelColor=ef8336)](https://pycqa.github.io/isort/)
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
@@ -13,53 +13,6 @@ AI modules to support the Docling PDF document conversion project.
 
 - TableFormer is an AI module that recognizes the structure of a table and the bounding boxes of the table content.
 - Layout model is an AI model that provides among other things ability to detect tables on the page. This package contains inference code for Layout model.
-
-
-## Installation Instructions
-
-### MacOS / Linux
-
-To install `poetry` locally, use either `pip` or `homebrew`.
-
-To install `poetry` on a docker container, do the following:
-```
-ENV POETRY_NO_INTERACTION=1 \
-    POETRY_VIRTUALENVS_CREATE=false
-
-# Install poetry
-RUN curl -sSL 'https://install.python-poetry.org' > install-poetry.py \
-    && python install-poetry.py \
-    && poetry --version \
-    && rm install-poetry.py
-```
-
-To install and run the package, simply set up a poetry environment
-
-```
-poetry env use $(which python3.10)
-poetry shell
-```
-
-and install all the dependencies,
-
-```
-poetry install # this will only install the deps from the poetry.lock
-
-poetry install --no-dev # this will skip installing dev dependencies
-```
-
-To update or add new dependencies from `pyproject.toml`, rebuild `poetry.lock`
-```
-poetry update
-```
-
-#### MacOS Intel
-
-When in development mode on MacOS with Intel chips, one can use compatible dependencies with
-
-```console
-poetry update --with mac_intel
-```
 
 
 ## Pipeline Overview

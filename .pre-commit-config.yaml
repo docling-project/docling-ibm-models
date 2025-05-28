@@ -4,24 +4,23 @@ repos:
     hooks:
       - id: black
         name: Black
-        entry: poetry run black docling_ibm_models
+        entry: uv run --no-sync black docling_ibm_models
         pass_filenames: false
         language: system
         files: '\.py$'
       - id: isort
         name: isort
-        entry: poetry run isort docling_ibm_models
+        entry: uv run --no-sync isort docling_ibm_models
         pass_filenames: false
         language: system
         files: '\.py$'
-      - id: poetry
-        name: Poetry check
-        entry: poetry lock --check
-        pass_filenames: false
-        language: system
       - id: system
         name: MyPy
-        entry: poetry run mypy docling_ibm_models
+        entry: uv run --no-sync mypy docling_ibm_models
         pass_filenames: false
         language: system
         files: '\.py$'
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.7.8
+    hooks:
+      - id: uv-lock
