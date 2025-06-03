@@ -4,6 +4,9 @@ on:
   release:
     types: [published]
 
+env:
+  UV_FROZEN: "1"
+
 permissions:
   contents: read
 

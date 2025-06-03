@@ -3,6 +3,9 @@ name: "Run CD"
 on:
   workflow_dispatch:
 
+env:
+  UV_FROZEN: "1"
+
 jobs:
   code-checks:
     uses: ./.github/workflows/checks.yml
