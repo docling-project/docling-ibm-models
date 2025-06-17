@@ -5,10 +5,11 @@ This module provides a rule-based model to identify list item markers and
 merge marker-only TextItems with their content to create proper ListItems.
 """
 
+import logging
 import re
 from typing import List, Optional, Tuple, Union
 
-from docling_core.types.doc import (
+from docling_core.types.doc.document import (
     DocItemLabel,
     DoclingDocument,
     GroupItem,
@@ -16,10 +17,13 @@ from docling_core.types.doc import (
     ListItem,
     OrderedList,
     ProvenanceItem,
+    RefItem,
     TextItem,
     UnorderedList,
 )
-from docling_core.types.labels import DocItemLabel
+from docling_core.types.doc.labels import DocItemLabel
+
+_log = logging.getLogger(__name__)
 
 
 class ListItemMarkerProcessor:
@@ -90,26 +94,26 @@ class ListItemMarkerProcessor:
             List of (marker_item, content_item) tuples. content_item can be None
             if the marker item already contains content.
         """
-        self.matched_items: dict[int, tuple[str, bool]] = (
+        self.matched_items: dict[int, tuple[RefItem, bool]] = (
             {}
         )  # index to (self_ref, is_pure_marker)
-        self.other: dict[int, str] = {}  # index to self_ref
+        self.other: dict[int, RefItem] = {}  # index to self_ref
 
         for i, (item, level) in enumerate(doc.iterate_items(with_groups=False)):
             if not isinstance(item, TextItem):
                 continue
 
-            if self._is_bullet_marker(item.text):
-                self.matched_items[i] = (item.self_ref, True)
-            elif self._is_numbered_marker(item.text):
-                self.matched_items[i] = (item.self_ref, True)
+            if self._is_bullet_marker(text=item.orig):
+                self.matched_items[i] = (item.get_ref(), True)
+            elif self._is_numbered_marker(text=item.orig):
+                self.matched_items[i] = (item.get_ref(), True)
             else:
                 for pattern in self.compiled_bullet_item_patterns:
-                    mtch = pattern.match(text)
+                    mtch = pattern.match(text=item.orig)
                     if mtch:
-                        self.matched_items[i] = (item.self_ref, False)
+                        self.matched_items[i] = (item.get_ref(), False)
 
-                        if isinstance(item, ListItem):
+                        if isinstance(item, ListItem):  # update item in place
                             item.marker = mtch[1]
                             item.text = mtch[2]
                         else:
@@ -118,11 +122,11 @@ class ListItemMarkerProcessor:
                             )
 
                 for pattern in self.compiled_numbered_item_patterns:
-                    mtch = pattern.match(text)
+                    mtch = pattern.match(text=item.orig)
                     if mtch:
-                        self.matched_items[i] = (item.self_ref, False)
+                        self.matched_items[i] = (item.get_ref(), False)
 
-                        if isinstance(item, ListItem):
+                        if isinstance(item, ListItem):  # update item in place
                             item.marker = mtch[1]
                             item.text = mtch[2]
                         else:
@@ -130,14 +134,14 @@ class ListItemMarkerProcessor:
                                 f"matching text for numbered_item_patterns that is not ListItem: {item.label}"
                             )
 
-            if i not in pairs:
-                self.other[i] = item.self_ref
+            if i not in self.matched_items:
+                self.other[i] = item.get_ref()
 
-    def _group_consecutive_list_items(doc):
+    def _group_consecutive_list_items(self, doc: DoclingDocument) -> DoclingDocument:
         """
         Might need to group list-items, not sure yet how...
         """
-        return
+        return doc
 
     def process_document(self, doc: DoclingDocument) -> DoclingDocument:
         """
@@ -151,14 +155,23 @@ class ListItemMarkerProcessor:
         """
 
         def create_listitem(
-            marker_text: str, content_text: str, provs: list[ProvenanceItem]
+            marker_text: str,
+            content_text: str,
+            orig_text: str,
+            prov: list[ProvenanceItem],
         ) -> ListItem:
             # Create new ListItem
-            return ListItem(marker=marker_text, text=content_text, provs=provs)
+            return ListItem(
+                self_ref="#",
+                marker=marker_text,
+                text=content_text,
+                orig=orig_text,
+                prov=prov,
+            )
 
         # Find all marker-content pairs: this function will identify text-items
         # with a marker fused into the text
-        self.find_marker_content_pairs(doc)
+        self._find_marker_content_pairs(doc)
 
         # If you find a sole marker-item followed by a text, there are
         # good chances we need to merge them into a list-item. This
@@ -168,24 +181,25 @@ class ListItemMarkerProcessor:
 
             if is_marker:
 
-                marker_item = doc.resolve(self_ref)
+                marker_item = self_ref.resolve(doc=doc)
 
                 if ind + 1 in self.other:
-                    next_item = doc.resolve(self.other[ind + 1])
+                    next_item = self.other[ind + 1].resolve(doc=doc)
 
                     if (isinstance(next_item, TextItem)) and (
                         next_item.label in [DocItemLabel.TEXT, DocItemLabel.LIST_ITEM]
                     ):
 
                         marker_text: str = marker_item.text
-                        content_text: str = content_item.text
-                        provs = marker_item.provs
-                        provs.extend(content_item.provs)
+                        content_text: str = next_item.text
+                        prov = marker_item.prov
+                        prov.extend(next_item.prov)
 
                         list_item = create_listitem(
                             marker_text=marker_text,
                             content_text=content_text,
-                            provs=provs,
+                            orig_text=f"{marker_text} {content_text}",
+                            prov=prov,
                         )
 
                         # Insert the new ListItem
@@ -198,6 +212,6 @@ class ListItemMarkerProcessor:
                         doc.delete_items(node_items=items_to_delete)
 
         # Group consecutive list items
-        self._group_consecutive_list_items(doc)
+        doc = self._group_consecutive_list_items(doc)
 
         return doc
