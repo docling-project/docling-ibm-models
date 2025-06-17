@@ -70,10 +70,11 @@ class ListItemMarkerProcessor:
         ]
 
         self.compiled_bullet_item_patterns = [
-            re.compile(f"^({pattern})\s(.+)") for pattern in self.bullet_patterns
+            re.compile(f"^({pattern})" + r"\s(.+)") for pattern in self.bullet_patterns
         ]
         self.compiled_numbered_item_patterns = [
-            re.compile(f"^({pattern})\s(.+)") for pattern in self.numbered_patterns
+            re.compile(f"^({pattern})" + r"\s(.+)")
+            for pattern in self.numbered_patterns
         ]
 
     def _is_bullet_marker(self, text: str) -> bool:
@@ -103,13 +104,13 @@ class ListItemMarkerProcessor:
             if not isinstance(item, TextItem):
                 continue
 
-            if self._is_bullet_marker(text=item.orig):
+            if self._is_bullet_marker(item.orig):
                 self.matched_items[i] = (item.get_ref(), True)
-            elif self._is_numbered_marker(text=item.orig):
+            elif self._is_numbered_marker(item.orig):
                 self.matched_items[i] = (item.get_ref(), True)
             else:
                 for pattern in self.compiled_bullet_item_patterns:
-                    mtch = pattern.match(text=item.orig)
+                    mtch = pattern.match(item.orig)
                     if mtch:
                         self.matched_items[i] = (item.get_ref(), False)
 
@@ -122,7 +123,7 @@ class ListItemMarkerProcessor:
                             )
 
                 for pattern in self.compiled_numbered_item_patterns:
-                    mtch = pattern.match(text=item.orig)
+                    mtch = pattern.match(item.orig)
                     if mtch:
                         self.matched_items[i] = (item.get_ref(), False)
 
