@@ -4,15 +4,14 @@
 #
 import copy
 import logging
-import os
 import re
-from collections.abc import Iterable
 from typing import Dict, List, Set, Tuple
 
 from docling_core.types.doc.base import BoundingBox, Size
 from docling_core.types.doc.document import RefItem
 from docling_core.types.doc.labels import DocItemLabel
 from pydantic import BaseModel
+from rtree import index as rtree_index
 
 
 class PageElement(BoundingBox):
@@ -306,7 +305,13 @@ class ReadingOrderPredictor:
                     self.l2r_map[i] = j
                     self.r2l_map[j] = i
 
-    def _init_ud_maps(self, page_elems: List[PageElement]):
+    def _init_ud_maps(self, page_elems: List[PageElement]) -> None:
+        """
+        Initialize up/down maps for reading order prediction using R-tree spatial indexing.
+
+        Uses R-tree for spatial queries.
+        Determines linear reading sequence by finding preceding/following elements.
+        """
         self.up_map = {}
         self.dn_map = {}
 
@@ -314,50 +319,82 @@ class ReadingOrderPredictor:
             self.up_map[i] = []
             self.dn_map[i] = []
 
-        for j, pelem_j in enumerate(page_elems):
+        # Build R-tree spatial index
+        spatial_idx = rtree_index.Index()
+        for i, pelem in enumerate(page_elems):
+            spatial_idx.insert(i, (pelem.l, pelem.b, pelem.r, pelem.t))
 
+        for j, pelem_j in enumerate(page_elems):
             if j in self.r2l_map:
                 i = self.r2l_map[j]
-
                 self.dn_map[i] = [j]
                 self.up_map[j] = [i]
-
                 continue
 
-            for i, pelem_i in enumerate(page_elems):
+            # Find elements above current that might precede it in reading order
+            query_bbox = (pelem_j.l - 0.1, pelem_j.t, pelem_j.r + 0.1, float("inf"))
+            candidates = list(spatial_idx.intersection(query_bbox))
 
+            for i in candidates:
                 if i == j:
                     continue
 
-                is_horizontally_connected: bool = False
-                is_i_just_above_j: bool = pelem_i.overlaps_horizontally(
-                    pelem_j
-                ) and pelem_i.is_strictly_above(pelem_j)
+                pelem_i = page_elems[i]
 
-                for w, pelem_w in enumerate(page_elems):
+                # Check spatial relationship
+                if not (
+                    pelem_i.is_strictly_above(pelem_j)
+                    and pelem_i.overlaps_horizontally(pelem_j)
+                ):
+                    continue
 
-                    if not is_horizontally_connected:
-                        is_horizontally_connected = pelem_w.is_horizontally_connected(
-                            pelem_i, pelem_j
-                        )
-
-                    # ensure there is no other element that is between i and j vertically
-                    if is_i_just_above_j and (
-                        pelem_i.overlaps_horizontally(pelem_w)
-                        or pelem_j.overlaps_horizontally(pelem_w)
-                    ):
-                        i_above_w: bool = pelem_i.is_strictly_above(pelem_w)
-                        w_above_j: bool = pelem_w.is_strictly_above(pelem_j)
-
-                        is_i_just_above_j = not (i_above_w and w_above_j)
-
-                if is_i_just_above_j:
-
+                # Check for interrupting elements
+                if not self._has_sequence_interruption(
+                    spatial_idx, page_elems, i, j, pelem_i, pelem_j
+                ):
+                    # Follow left-to-right mapping
                     while i in self.l2r_map:
                         i = self.l2r_map[i]
 
                     self.dn_map[i].append(j)
                     self.up_map[j].append(i)
+
+    def _has_sequence_interruption(
+        self,
+        spatial_idx: rtree_index.Index,
+        page_elems: List[PageElement],
+        i: int,
+        j: int,
+        pelem_i: PageElement,
+        pelem_j: PageElement,
+    ) -> bool:
+        """Check if elements interrupt the reading sequence between i and j."""
+        # Query R-tree for elements between i and j
+        x_min = min(pelem_i.l, pelem_j.l) - 1.0
+        x_max = max(pelem_i.r, pelem_j.r) + 1.0
+        y_min = pelem_j.t
+        y_max = pelem_i.b
+
+        candidates = list(spatial_idx.intersection((x_min, y_min, x_max, y_max)))
+
+        for w in candidates:
+            if w in (i, j):
+                continue
+
+            pelem_w = page_elems[w]
+
+            # Check if w interrupts the i->j sequence
+            if (
+                (
+                    pelem_i.overlaps_horizontally(pelem_w)
+                    or pelem_j.overlaps_horizontally(pelem_w)
+                )
+                and pelem_i.is_strictly_above(pelem_w)
+                and pelem_w.is_strictly_above(pelem_j)
+            ):
+                return True
+
+        return False
 
     def _do_horizontal_dilation(self, page_elems, dilated_page_elems):
 
