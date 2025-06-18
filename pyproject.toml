@@ -42,6 +42,7 @@ dependencies = [
   'docling-core (>=2.19.0,<3.0.0)',
   'transformers (>=4.42.0,<5.0.0)',
   'numpy (>=1.24.4,<3.0.0)',
+  "rtree>=1.0.0",
 ]
 
 [project.urls]
