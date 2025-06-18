@@ -583,7 +583,7 @@ wheels = [
 
 [[package]]
 name = "docling-ibm-models"
-version = "3.4.4"
+version = "3.5.0"
 source = { editable = "." }
 dependencies = [
     { name = "docling-core" },

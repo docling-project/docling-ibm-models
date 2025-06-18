@@ -1,3 +1,9 @@
+## [v3.5.0](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.5.0) - 2025-06-18
+
+### Feature
+
+* Performance optimizations for reading order and table model ([#115](https://github.com/docling-project/docling-ibm-models/issues/115)) ([`0758ad1`](https://github.com/docling-project/docling-ibm-models/commit/0758ad10d2d785d83b6541488a70d35befe004e5))
+
 ## [v3.4.4](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.4.4) - 2025-06-03
 
 ### Fix
