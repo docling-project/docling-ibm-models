@@ -309,7 +309,7 @@ class ReadingOrderPredictor:
         """
         Initialize up/down maps for reading order prediction using R-tree spatial indexing.
 
-        Uses R-tree for O(log N) spatial queries instead of O(N³) brute force.
+        Uses R-tree for spatial queries.
         Determines linear reading sequence by finding preceding/following elements.
         """
         self.up_map = {}
