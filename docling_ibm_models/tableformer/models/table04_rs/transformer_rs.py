@@ -2,6 +2,8 @@
 # Copyright IBM Corp. 2024 - 2024
 # SPDX-License-Identifier: MIT
 #
+
+
 import logging
 import math
 from typing import Optional
@@ -99,6 +101,7 @@ class TMTransformerDecoderLayer(nn.TransformerDecoderLayer):
             tgt,
             attn_mask=None,  # None, because we only care about the last tag
             key_padding_mask=tgt_key_padding_mask,
+            need_weights=False,  # Optimization: Don't compute attention weights
         )[0]
         tgt_last_tok = tgt_last_tok + self.dropout1(tmp_tgt)
         tgt_last_tok = self.norm1(tgt_last_tok)
@@ -110,6 +113,7 @@ class TMTransformerDecoderLayer(nn.TransformerDecoderLayer):
                 memory,
                 attn_mask=memory_mask,
                 key_padding_mask=memory_key_padding_mask,
+                need_weights=False,  # Optimization: Don't compute attention weights
             )[0]
             tgt_last_tok = tgt_last_tok + self.dropout2(tmp_tgt)
             tgt_last_tok = self.norm2(tgt_last_tok)
