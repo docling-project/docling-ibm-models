@@ -77,6 +77,10 @@ class ListItemMarkerProcessor:
             for pattern in self.numbered_patterns
         ]
 
+        self.compiled_item_patterns = (
+            self.compiled_bullet_item_patterns + self.compiled_numbered_item_patterns
+        )
+
     def _is_bullet_marker(self, text: str) -> bool:
         """Check if text is a bullet marker."""
         text = text.strip()
@@ -109,31 +113,10 @@ class ListItemMarkerProcessor:
             elif self._is_numbered_marker(item.orig):
                 self.matched_items[i] = (item.get_ref(), True)
             else:
-                for pattern in self.compiled_bullet_item_patterns:
+                for pattern in self.compiled_item_patterns:
                     mtch = pattern.match(item.orig)
                     if mtch:
                         self.matched_items[i] = (item.get_ref(), False)
-
-                        if isinstance(item, ListItem):  # update item in place
-                            item.marker = mtch[1]
-                            item.text = mtch[2]
-                        else:
-                            _log.warning(
-                                f"matching text for bullet_item_patterns that is not ListItem: {item.label}"
-                            )
-
-                for pattern in self.compiled_numbered_item_patterns:
-                    mtch = pattern.match(item.orig)
-                    if mtch:
-                        self.matched_items[i] = (item.get_ref(), False)
-
-                        if isinstance(item, ListItem):  # update item in place
-                            item.marker = mtch[1]
-                            item.text = mtch[2]
-                        else:
-                            _log.warning(
-                                f"matching text for numbered_item_patterns that is not ListItem: {item.label}"
-                            )
 
             if i not in self.matched_items:
                 self.other[i] = item.get_ref()
@@ -144,17 +127,100 @@ class ListItemMarkerProcessor:
         """
         return doc
 
-    def process_document(self, doc: DoclingDocument) -> DoclingDocument:
-        """
-        Process the entire document to identify and convert list markers.
+    def process_listitem(self, item: ListItem) -> ListItem:
+        """Process a ListItem to extract and update marker and text from bullet/numbered patterns.
+
+        This method applies compiled regex patterns to match bullet point or numbered list
+        formatting in the original text, then updates the ListItem's marker and text fields
+        accordingly.
 
         Args:
-            doc: The DoclingDocument to process
+            item (ListItem): The list item to process, containing original text that may
+                           have bullet or numbered list formatting.
 
         Returns:
-            The processed document (modified in-place)
-        """
+            ListItem: The same ListItem instance with updated marker and text fields
+                     if a pattern match was found, otherwise unchanged.
 
+        Note:
+            The method modifies the input item in place when a pattern matches.
+            If the item is not actually a ListItem type, a warning is logged.
+        """
+        for pattern in self.compiled_item_patterns:
+            mtch = pattern.match(item.orig)
+            if mtch:
+                if isinstance(item, ListItem):  # update item in place
+                    item.marker = mtch[1]
+                    item.text = mtch[2]
+                else:
+                    _log.warning(
+                        f"matching text for bullet_item_patterns that is not ListItem: {item.label}"
+                    )
+        return item
+
+    def process_textitem(self, item: TextItem) -> Union[TextItem, ListItem]:
+        """Process a TextItem to detect and convert bullet/numbered list formatting.
+
+        This method examines TextItem instances to determine if they contain bullet point
+        or numbered list formatting. If detected and appropriate, it either updates an
+        existing ListItem or converts the TextItem into a new ListItem.
+
+        Args:
+            item (TextItem): The text item to process, which may contain bullet or
+                             numbered list formatting in its original text.
+
+        Returns:
+            Union[TextItem, ListItem]:
+                - If item is already a ListItem: returns the updated ListItem
+                - If item is a TextItem with list formatting (and not a section heading
+                  or footnote): returns a new ListItem with extracted marker and text
+                - Otherwise: returns the original TextItem unchanged
+
+        Note:
+            Section headings and footnotes are excluded from conversion to preserve
+            their semantic meaning. A warning is logged if pattern matching occurs
+            on unexpected item types.
+        """
+        for pattern in self.compiled_item_patterns:
+            mtch = pattern.match(item.orig)
+            if mtch:
+                if isinstance(item, ListItem):  # update item in place
+                    item.marker = mtch[1]
+                    item.text = mtch[2]
+
+                    return item
+                elif isinstance(item, TextItem) and (
+                    item.label
+                    not in [DocItemLabel.SECTION_HEADER, DocItemLabel.FOOTNOTE]
+                ):
+                    # Create new ListItem
+                    return ListItem(
+                        self_ref=item.get_ref().cref,
+                        marker=mtch[1],
+                        text=mtch[2],
+                        orig=item.orig,
+                        prov=item.prov,
+                    )
+                else:
+                    _log.warning(
+                        f"matching text for bullet_item_patterns that is not ListItem: {item.label}"
+                    )
+        return item
+
+    def update_listitem_in_place(
+        self, doc: DoclingDocument, allow_textitem: bool = False
+    ) -> DoclingDocument:
+        for item, level in doc.iterate_items():
+            if isinstance(item, ListItem):
+                item = self.process_listitem(item)
+            elif allow_textitem and isinstance(item, TextItem):
+                item = self.process_textitem(item)
+
+        return doc
+
+    def merge_markers_and_textitem_into_listitem(
+        self, doc: DoclingDocument
+    ) -> DoclingDocument:
         def create_listitem(
             marker_text: str,
             content_text: str,
@@ -211,6 +277,28 @@ class ListItemMarkerProcessor:
                         # Delete original items
                         items_to_delete = [marker_item, next_item]
                         doc.delete_items(node_items=items_to_delete)
+
+        return doc
+
+    def process_document(
+        self,
+        doc: DoclingDocument,
+        allow_textitem: bool = False,
+        merge_items: bool = False,
+    ) -> DoclingDocument:
+        """
+        Process the entire document to identify and convert list markers.
+
+        Args:
+            doc: The DoclingDocument to process
+
+        Returns:
+            The processed document (modified in-place)
+        """
+        doc = self.update_listitem_in_place(doc, allow_textitem=allow_textitem)
+
+        if merge_items:
+            doc = self.merge_markers_and_textitem_into_listitem(doc)
 
         # Group consecutive list items
         doc = self._group_consecutive_list_items(doc)
