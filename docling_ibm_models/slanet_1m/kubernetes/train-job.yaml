@@ -1,0 +1,88 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: train-job-${CI_PIPELINE_ID}
+  namespace: $NAMESPACE
+spec:
+  template:
+    spec:
+      containers:
+        - name: train-container
+          image: python:3.11
+          command: [ "bash", "-c" ]
+          args:
+            - |
+              # Install MinIO client
+              curl https://dl.min.io/client/mc/release/linux-amd64/mc --create-dirs -o ~/minio-binaries/mc
+              chmod +x $HOME/minio-binaries/mc
+              export PATH=$PATH:$HOME/minio-binaries/
+
+              # Set alias for MinIO server
+              mc alias set minio $ENDPOINT_URL $AWS_ACCESS_KEY_ID $AWS_SECRET_ACCESS_KEY
+
+              # Clone the repository
+              git clone https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git /repo
+              cd /repo
+
+              # Checkout the branch
+              git checkout $CI_COMMIT_REF_NAME
+              echo "Checking out branch $CI_COMMIT_REF_NAME"
+
+              # Set up environment
+              echo "BUCKET=$BUCKET" >> .env
+              echo "ENDPOINT_URL=$ENDPOINT_URL" >> .env
+              echo "REGION=$REGION" >> .env
+              echo "MODELS_BUCKET=$MODELS_BUCKET" >> .env
+              echo "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID" >> .env
+              echo "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY" >> .env
+              export $(cat .env | xargs)
+
+              # Install dependencies
+              python3.11 -m venv .venv
+              source .venv/bin/activate
+              pip install --requirement requirements.txt --no-cache-dir
+              pip install paddlepaddle-gpu==3.0.0b1 -i https://www.paddlepaddle.org.cn/packages/stable/cu123/
+              apt update && apt install --yes ffmpeg libsm6 libxext6
+
+              # Run training
+              dvc repro --pull
+
+              # Save the experiment metadata
+              dvc params diff main --md > experiment_report.md
+              dvc metrics diff main --md >> experiment_report.md
+
+              # Push the experiment metadata to MinIO
+              dvc push
+
+              mc cp experiment_report.md minio/$MODELS_BUCKET/experiments/experiment_report_${CI_MERGE_REQUEST_IID}.md
+              mc cp dvc.lock minio/$MODELS_BUCKET/experiments/dvc_lock_${CI_MERGE_REQUEST_IID}.lock
+          volumeMounts:
+            - name: repo-volume
+              mountPath: /repo
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aws-credentials
+                  key: access_key_id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws-credentials
+                  key: secret_access_key
+            - name: BUCKET
+              value: $BUCKET
+            - name: ENDPOINT_URL
+              value: $ENDPOINT_URL
+            - name: REGION
+              value: $REGION
+            - name: MODELS_BUCKET
+              value: $MODELS_BUCKET
+          resources:
+            limits:
+              nvidia.com/gpu-rtx-4090-24gb: 1
+      restartPolicy: Never
+      volumes:
+        - name: repo-volume
+          emptyDir: { }
+  backoffLimit: 2
