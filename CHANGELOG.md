@@ -1,3 +1,9 @@
+## [v3.6.0](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.6.0) - 2025-06-20
+
+### Feature
+
+* Add initial rule-based model to identify ListItem markers ([#113](https://github.com/docling-project/docling-ibm-models/issues/113)) ([`e063b97`](https://github.com/docling-project/docling-ibm-models/commit/e063b973897ccafbd58964079fe63230900c2419))
+
 ## [v3.5.0](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.5.0) - 2025-06-18
 
 ### Feature
