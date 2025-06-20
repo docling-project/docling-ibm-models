@@ -7,19 +7,15 @@ merge marker-only TextItems with their content to create proper ListItems.
 
 import logging
 import re
-from typing import List, Optional, Tuple, Union
+from typing import Union
 
 from docling_core.types.doc.document import (
     DocItemLabel,
     DoclingDocument,
-    GroupItem,
-    GroupLabel,
     ListItem,
-    OrderedList,
     ProvenanceItem,
     RefItem,
     TextItem,
-    UnorderedList,
 )
 from docling_core.types.doc.labels import DocItemLabel
 
@@ -40,7 +36,7 @@ class ListItemMarkerProcessor:
     def __init__(self):
         """Initialize the processor with marker patterns."""
         # Bullet markers (unordered lists)
-        self.bullet_patterns = [
+        self._bullet_patterns = [
             r"[\u2022\u2023\u25E6\u2043\u204C\u204D\u2219\u25AA\u25AB\u25CF\u25CB]",  # Various bullet symbols
             r"[-*+•·‣⁃]",  # Common ASCII and Unicode bullets
             r"[►▶▸‣➤➢]",  # Arrow-like bullets
@@ -48,7 +44,7 @@ class ListItemMarkerProcessor:
         ]
 
         # Numbered markers (ordered lists)
-        self.numbered_patterns = [
+        self._numbered_patterns = [
             r"\d+\.",  # 1. 2. 3.
             r"\d+\)",  # 1) 2) 3)
             r"\(\d+\)",  # (1) (2) (3)
@@ -62,34 +58,34 @@ class ListItemMarkerProcessor:
         ]
 
         # Compile all patterns
-        self.compiled_bullet_patterns = [
-            re.compile(f"^{pattern}$") for pattern in self.bullet_patterns
+        self._compiled_bullet_patterns = [
+            re.compile(f"^{pattern}$") for pattern in self._bullet_patterns
         ]
-        self.compiled_numbered_patterns = [
-            re.compile(f"^{pattern}$") for pattern in self.numbered_patterns
+        self._compiled_numbered_patterns = [
+            re.compile(f"^{pattern}$") for pattern in self._numbered_patterns
         ]
 
-        self.compiled_bullet_item_patterns = [
-            re.compile(f"^({pattern})" + r"\s(.+)") for pattern in self.bullet_patterns
+        self._compiled_bullet_item_patterns = [
+            re.compile(f"^({pattern})" + r"\s(.+)") for pattern in self._bullet_patterns
         ]
-        self.compiled_numbered_item_patterns = [
+        self._compiled_numbered_item_patterns = [
             re.compile(f"^({pattern})" + r"\s(.+)")
-            for pattern in self.numbered_patterns
+            for pattern in self._numbered_patterns
         ]
 
-        self.compiled_item_patterns = (
-            self.compiled_bullet_item_patterns + self.compiled_numbered_item_patterns
+        self._compiled_item_patterns = (
+            self._compiled_bullet_item_patterns + self._compiled_numbered_item_patterns
         )
 
     def _is_bullet_marker(self, text: str) -> bool:
         """Check if text is a bullet marker."""
         text = text.strip()
-        return any(pattern.match(text) for pattern in self.compiled_bullet_patterns)
+        return any(pattern.match(text) for pattern in self._compiled_bullet_patterns)
 
     def _is_numbered_marker(self, text: str) -> bool:
         """Check if text is a numbered marker."""
         text = text.strip()
-        return any(pattern.match(text) for pattern in self.compiled_numbered_patterns)
+        return any(pattern.match(text) for pattern in self._compiled_numbered_patterns)
 
     def _find_marker_content_pairs(self, doc: DoclingDocument):
         """
@@ -99,27 +95,27 @@ class ListItemMarkerProcessor:
             List of (marker_item, content_item) tuples. content_item can be None
             if the marker item already contains content.
         """
-        self.matched_items: dict[int, tuple[RefItem, bool]] = (
+        self._matched_items: dict[int, tuple[RefItem, bool]] = (
             {}
         )  # index to (self_ref, is_pure_marker)
-        self.other: dict[int, RefItem] = {}  # index to self_ref
+        self._other: dict[int, RefItem] = {}  # index to self_ref
 
         for i, (item, level) in enumerate(doc.iterate_items(with_groups=False)):
             if not isinstance(item, TextItem):
                 continue
 
             if self._is_bullet_marker(item.orig):
-                self.matched_items[i] = (item.get_ref(), True)
+                self._matched_items[i] = (item.get_ref(), True)
             elif self._is_numbered_marker(item.orig):
-                self.matched_items[i] = (item.get_ref(), True)
+                self._matched_items[i] = (item.get_ref(), True)
             else:
-                for pattern in self.compiled_item_patterns:
+                for pattern in self._compiled_item_patterns:
                     mtch = pattern.match(item.orig)
                     if mtch:
-                        self.matched_items[i] = (item.get_ref(), False)
+                        self._matched_items[i] = (item.get_ref(), False)
 
-            if i not in self.matched_items:
-                self.other[i] = item.get_ref()
+            if i not in self._matched_items:
+                self._other[i] = item.get_ref()
 
     def _group_consecutive_list_items(self, doc: DoclingDocument) -> DoclingDocument:
         """
@@ -127,7 +123,7 @@ class ListItemMarkerProcessor:
         """
         return doc
 
-    def process_listitem(self, item: ListItem) -> ListItem:
+    def process_list_item(self, item: ListItem) -> ListItem:
         """Process a ListItem to extract and update marker and text from bullet/numbered patterns.
 
         This method applies compiled regex patterns to match bullet point or numbered list
@@ -146,7 +142,7 @@ class ListItemMarkerProcessor:
             The method modifies the input item in place when a pattern matches.
             If the item is not actually a ListItem type, a warning is logged.
         """
-        for pattern in self.compiled_item_patterns:
+        for pattern in self._compiled_item_patterns:
             mtch = pattern.match(item.orig)
             if mtch:
                 if isinstance(item, ListItem):  # update item in place
@@ -158,7 +154,7 @@ class ListItemMarkerProcessor:
                     )
         return item
 
-    def process_textitem(self, item: TextItem) -> Union[TextItem, ListItem]:
+    def process_text_item(self, item: TextItem) -> Union[TextItem, ListItem]:
         """Process a TextItem to detect and convert bullet/numbered list formatting.
 
         This method examines TextItem instances to determine if they contain bullet point
@@ -181,7 +177,7 @@ class ListItemMarkerProcessor:
             their semantic meaning. A warning is logged if pattern matching occurs
             on unexpected item types.
         """
-        for pattern in self.compiled_item_patterns:
+        for pattern in self._compiled_item_patterns:
             mtch = pattern.match(item.orig)
             if mtch:
                 if isinstance(item, ListItem):  # update item in place
@@ -207,18 +203,18 @@ class ListItemMarkerProcessor:
                     )
         return item
 
-    def update_listitem_in_place(
+    def update_list_items_in_place(
         self, doc: DoclingDocument, allow_textitem: bool = False
     ) -> DoclingDocument:
         for item, level in doc.iterate_items():
             if isinstance(item, ListItem):
-                item = self.process_listitem(item)
+                item = self.process_list_item(item)
             elif allow_textitem and isinstance(item, TextItem):
-                item = self.process_textitem(item)
+                item = self.process_text_item(item)
 
         return doc
 
-    def merge_markers_and_textitem_into_listitem(
+    def merge_markers_and_text_items_into_list_items(
         self, doc: DoclingDocument
     ) -> DoclingDocument:
         def create_listitem(
@@ -244,14 +240,14 @@ class ListItemMarkerProcessor:
         # good chances we need to merge them into a list-item. This
         # function is only necessary as long as the layout-model does not
         # recognize list-items properly
-        for ind, (self_ref, is_marker) in self.matched_items.items():
+        for ind, (self_ref, is_marker) in self._matched_items.items():
 
             if is_marker:
 
                 marker_item = self_ref.resolve(doc=doc)
 
-                if ind + 1 in self.other:
-                    next_item = self.other[ind + 1].resolve(doc=doc)
+                if ind + 1 in self._other:
+                    next_item = self._other[ind + 1].resolve(doc=doc)
 
                     if (isinstance(next_item, TextItem)) and (
                         next_item.label in [DocItemLabel.TEXT, DocItemLabel.LIST_ITEM]
@@ -295,10 +291,10 @@ class ListItemMarkerProcessor:
         Returns:
             The processed document (modified in-place)
         """
-        doc = self.update_listitem_in_place(doc, allow_textitem=allow_textitem)
+        doc = self.update_list_items_in_place(doc, allow_textitem=allow_textitem)
 
         if merge_items:
-            doc = self.merge_markers_and_textitem_into_listitem(doc)
+            doc = self.merge_markers_and_text_items_into_list_items(doc)
 
         # Group consecutive list items
         doc = self._group_consecutive_list_items(doc)
