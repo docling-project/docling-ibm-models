@@ -37,7 +37,12 @@ class TableModel04_rs(BaseModel, nn.Module):
         # Encoder
         self._enc_image_size = config["model"]["enc_image_size"]
         self._encoder_dim = config["model"]["hidden_dim"]
-        self._encoder = Encoder04(self._enc_image_size, self._encoder_dim).to(device)
+        self._encoder = Encoder04(self._enc_image_size, self._encoder_dim)
+
+        if any(p.device.type == "meta" for p in self._encoder.parameters()):
+            self._encoder = self._encoder.to_empty(device)
+        else:
+            self._encoder = self._encoder.to(device)
 
         tag_vocab_size = len(word_map["word_map_tag"])
 
