@@ -89,7 +89,11 @@ class LayoutPredictor:
         self._image_processor = RTDetrImageProcessor.from_json_file(processor_config)
         self._model = RTDetrForObjectDetection.from_pretrained(
             artifact_path, config=model_config
-        ).to(self._device)
+        )
+        if any(p.device.type == "meta" for p in self._model.parameters()):
+            self._model = self._model.to_empty(self._device)
+        else:
+            self._model = self._model.to(self._device)
         self._model.eval()
 
         _log.debug("LayoutPredictor settings: {}".format(self.info()))
