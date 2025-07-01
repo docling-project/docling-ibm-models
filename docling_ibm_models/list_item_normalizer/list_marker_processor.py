@@ -7,10 +7,9 @@ merge marker-only TextItems with their content to create proper ListItems.
 
 import logging
 import re
-from typing import Union
+from typing import Optional, Union
 
 from docling_core.types.doc.document import (
-    DocItemLabel,
     DoclingDocument,
     ListItem,
     ProvenanceItem,
@@ -33,8 +32,9 @@ class ListItemMarkerProcessor:
     4. Group consecutive ListItems into appropriate list containers
     """
 
-    def __init__(self):
+    def __init__(self, infer_enumerated: bool = True):
         """Initialize the processor with marker patterns."""
+        self._infer_enumerated = infer_enumerated
         # Bullet markers (unordered lists)
         self._bullet_patterns = [
             r"[\u2022\u2023\u25E6\u2043\u204C\u204D\u2219\u25AA\u25AB\u25CF\u25CB]",  # Various bullet symbols
@@ -86,6 +86,32 @@ class ListItemMarkerProcessor:
         """Check if text is a numbered marker."""
         text = text.strip()
         return any(pattern.match(text) for pattern in self._compiled_numbered_patterns)
+
+    @classmethod
+    def _marker_is_enumerated(cls, marker: str) -> bool:
+        """Determine if enumerated based on if it contains alphanumeric characters."""
+        return any(c.isalnum() for c in marker)
+
+    @classmethod
+    def _create_list_item(
+        cls,
+        self_ref,
+        marker: str,
+        text: str,
+        orig: str,
+        prov: list[ProvenanceItem],
+        enumerated: Optional[bool] = None,
+    ) -> ListItem:
+        item = ListItem(
+            self_ref=self_ref,
+            marker=marker,
+            text=text,
+            orig=orig,
+            prov=prov,
+        )
+        if enumerated is not None:
+            item.enumerated = enumerated
+        return item
 
     def _find_marker_content_pairs(self, doc: DoclingDocument):
         """
@@ -148,6 +174,8 @@ class ListItemMarkerProcessor:
                 if isinstance(item, ListItem):  # update item in place
                     item.marker = mtch[1]
                     item.text = mtch[2]
+                    if self._infer_enumerated:
+                        item.enumerated = self._marker_is_enumerated(item.marker)
                 else:
                     _log.warning(
                         f"matching text for bullet_item_patterns that is not ListItem: {item.label}"
@@ -164,6 +192,7 @@ class ListItemMarkerProcessor:
         Args:
             item (TextItem): The text item to process, which may contain bullet or
                              numbered list formatting in its original text.
+            infer_enumerated (bool): Whether to infer if a list item is enumerated based on the marker.
 
         Returns:
             Union[TextItem, ListItem]:
@@ -180,9 +209,14 @@ class ListItemMarkerProcessor:
         for pattern in self._compiled_item_patterns:
             mtch = pattern.match(item.orig)
             if mtch:
+                marker = mtch[1]
+                text = mtch[2]
+
                 if isinstance(item, ListItem):  # update item in place
-                    item.marker = mtch[1]
-                    item.text = mtch[2]
+                    item.marker = marker
+                    item.text = text
+                    if self._infer_enumerated:
+                        item.enumerated = self._marker_is_enumerated(marker)
 
                     return item
                 elif isinstance(item, TextItem) and (
@@ -190,12 +224,17 @@ class ListItemMarkerProcessor:
                     not in [DocItemLabel.SECTION_HEADER, DocItemLabel.FOOTNOTE]
                 ):
                     # Create new ListItem
-                    return ListItem(
+                    return self._create_list_item(
                         self_ref=item.get_ref().cref,
-                        marker=mtch[1],
-                        text=mtch[2],
+                        marker=marker,
+                        text=text,
                         orig=item.orig,
                         prov=item.prov,
+                        enumerated=(
+                            self._marker_is_enumerated(marker)
+                            if self._infer_enumerated
+                            else None
+                        ),
                     )
                 else:
                     _log.warning(
@@ -204,7 +243,9 @@ class ListItemMarkerProcessor:
         return item
 
     def update_list_items_in_place(
-        self, doc: DoclingDocument, allow_textitem: bool = False
+        self,
+        doc: DoclingDocument,
+        allow_textitem: bool = False,
     ) -> DoclingDocument:
         for item, level in doc.iterate_items():
             if isinstance(item, ListItem):
@@ -217,20 +258,6 @@ class ListItemMarkerProcessor:
     def merge_markers_and_text_items_into_list_items(
         self, doc: DoclingDocument
     ) -> DoclingDocument:
-        def create_listitem(
-            marker_text: str,
-            content_text: str,
-            orig_text: str,
-            prov: list[ProvenanceItem],
-        ) -> ListItem:
-            # Create new ListItem
-            return ListItem(
-                self_ref="#",
-                marker=marker_text,
-                text=content_text,
-                orig=orig_text,
-                prov=prov,
-            )
 
         # Find all marker-content pairs: this function will identify text-items
         # with a marker fused into the text
@@ -258,11 +285,21 @@ class ListItemMarkerProcessor:
                         prov = marker_item.prov
                         prov.extend(next_item.prov)
 
-                        list_item = create_listitem(
-                            marker_text=marker_text,
-                            content_text=content_text,
-                            orig_text=f"{marker_text} {content_text}",
+                        list_item = self._create_list_item(
+                            self_ref="#",
+                            marker=marker_text,
+                            text=content_text,
+                            orig=f"{marker_text} {content_text}",
                             prov=prov,
+                            enumerated=(
+                                self._marker_is_enumerated(marker_text)
+                                if self._infer_enumerated
+                                else (
+                                    marker_item.enumerated
+                                    if isinstance(marker_item, ListItem)
+                                    else None
+                                )
+                            ),
                         )
 
                         # Insert the new ListItem
