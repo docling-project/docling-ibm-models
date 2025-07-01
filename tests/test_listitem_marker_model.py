@@ -54,7 +54,7 @@ def test_listitem_marker_model():
 
     # Process the document
     processor = ListItemMarkerProcessor()
-    processed_doc = processor.process_document(doc)
+    processed_doc = processor.process_document(doc, merge_items=True)
 
     # print(" ---------- document: \n", processed_doc.export_to_markdown(), "\n ---------- \n")
 
