@@ -210,7 +210,6 @@ class ListItemMarkerProcessor:
         Args:
             item (TextItem): The text item to process, which may contain bullet or
                              numbered list formatting in its original text.
-            infer_enumerated (bool): Whether to infer if a list item is enumerated based on the marker.
 
         Returns:
             Union[TextItem, ListItem]:
@@ -264,9 +263,7 @@ class ListItemMarkerProcessor:
         return item
 
     def update_list_items_in_place(
-        self,
-        doc: DoclingDocument,
-        allow_textitem: bool = False,
+        self, doc: DoclingDocument, allow_textitem: bool = False
     ) -> DoclingDocument:
         for item, level in doc.iterate_items():
             if isinstance(item, ListItem):
