@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MIT
 #
 import logging
+import threading
 from typing import List, Optional, Union
 
 import numpy as np
@@ -16,6 +17,9 @@ from docling_ibm_models.code_formula_model.models.sam_opt_image_processor import
 )
 
 _log = logging.getLogger(__name__)
+
+# Global lock for model initialization to prevent threading issues
+_model_init_lock = threading.Lock()
 
 
 class StopOnString(StoppingCriteria):
@@ -80,13 +84,17 @@ class CodeFormulaPredictor:
         if device == "cpu":
             torch.set_num_threads(self._num_threads)
 
-        self._tokenizer = AutoTokenizer.from_pretrained(
-            artifacts_path, use_fast=True, padding_side="left"
-        )
-        self._model = SamOPTForCausalLM.from_pretrained(artifacts_path).to(self._device)
-        self._model.eval()
+        # Use lock to prevent threading issues during model initialization
+        with _model_init_lock:
+            self._tokenizer = AutoTokenizer.from_pretrained(
+                artifacts_path, use_fast=True, padding_side="left"
+            )
+            self._model = SamOPTForCausalLM.from_pretrained(artifacts_path).to(
+                self._device
+            )
+            self._model.eval()
 
-        self._image_processor = SamOptImageProcessor.from_pretrained(artifacts_path)
+            self._image_processor = SamOptImageProcessor.from_pretrained(artifacts_path)
 
         _log.debug("CodeFormulaModel settings: {}".format(self.info()))
 

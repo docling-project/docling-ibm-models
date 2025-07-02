@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MIT
 #
 import logging
+import threading
 from typing import List, Tuple, Union
 
 import numpy as np
@@ -12,6 +13,9 @@ from PIL import Image
 from transformers import AutoConfig, AutoModelForImageClassification
 
 _log = logging.getLogger(__name__)
+
+# Global lock for model initialization to prevent threading issues
+_model_init_lock = threading.Lock()
 
 
 class DocumentFigureClassifierPredictor:
@@ -85,9 +89,10 @@ class DocumentFigureClassifierPredictor:
         if device == "cpu":
             torch.set_num_threads(self._num_threads)
 
-        model = AutoModelForImageClassification.from_pretrained(artifacts_path)
-        self._model = model.to(device)
-        self._model.eval()
+        with _model_init_lock:
+            model = AutoModelForImageClassification.from_pretrained(artifacts_path)
+            self._model = model.to(device)
+            self._model.eval()
 
         self._image_processor = transforms.Compose(
             [
@@ -100,7 +105,8 @@ class DocumentFigureClassifierPredictor:
             ]
         )
 
-        config = AutoConfig.from_pretrained(artifacts_path)
+        with _model_init_lock:
+            config = AutoConfig.from_pretrained(artifacts_path)
 
         self._classes = list(config.id2label.values())
         self._classes.sort()
