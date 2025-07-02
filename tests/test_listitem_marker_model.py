@@ -1,4 +1,4 @@
-from docling_core.types.doc.document import DoclingDocument, ProvenanceItem
+from docling_core.types.doc.document import DoclingDocument, ListItem, ProvenanceItem
 from docling_core.types.doc.base import BoundingBox, CoordOrigin
 
 from docling_core.types.doc.labels import DocItemLabel
@@ -62,9 +62,13 @@ def test_listitem_marker_model():
 
     assert processed_doc.texts[0].text=="• Second item with bullet and content"
 
+    assert isinstance(processed_doc.texts[1], ListItem)
     assert processed_doc.texts[1].text=="Third item with bullet and content"
     assert processed_doc.texts[1].marker=="•"
+    assert not processed_doc.texts[1].enumerated
 
+    assert isinstance(processed_doc.texts[2], ListItem)
     assert processed_doc.texts[2].label==DocItemLabel.LIST_ITEM
     assert processed_doc.texts[2].text=="First item content"
     assert processed_doc.texts[2].marker=="1."
+    assert processed_doc.texts[2].enumerated
