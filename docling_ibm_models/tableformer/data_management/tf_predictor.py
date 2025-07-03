@@ -6,6 +6,7 @@ import glob
 import json
 import logging
 import os
+import threading
 from itertools import groupby
 from pathlib import Path
 
@@ -34,6 +35,9 @@ from docling_ibm_models.tableformer.utils.app_profiler import AggProfiler
 LOG_LEVEL = logging.WARN
 
 logger = s.get_custom_logger(__name__, LOG_LEVEL)
+
+# Global lock for model initialization to prevent threading issues
+_model_init_lock = threading.Lock()
 
 
 class bcolors:
@@ -175,34 +179,39 @@ class TFPredictor:
         """
 
         self._model_type = self._config["model"]["type"]
-        model = TableModel04_rs(self._config, self._init_data, self._device)
 
-        if model is None:
-            err_msg = "Not able to initiate a model for {}".format(self._model_type)
-            self._log().error(err_msg)
-            raise ValueError(err_msg)
+        # Use lock to prevent threading issues during model initialization
+        with _model_init_lock:
+            model = TableModel04_rs(self._config, self._init_data, self._device)
 
-        self._remove_padding = False
-        if self._model_type == "TableModel02":
-            self._remove_padding = True
+            if model is None:
+                err_msg = "Not able to initiate a model for {}".format(self._model_type)
+                self._log().error(err_msg)
+                raise ValueError(err_msg)
 
-        # Load model from safetensors
-        save_dir = self._config["model"]["save_dir"]
-        models_fn = glob.glob(f"{save_dir}/tableformer_*.safetensors")
-        if not models_fn:
-            err_msg = "Not able to find a model file for {}".format(self._model_type)
-            self._log().error(err_msg)
-            raise ValueError(err_msg)
-        model_fn = models_fn[
-            0
-        ]  # Take the first tableformer safetensors file inside the save_dir
-        missing, unexpected = load_model(model, model_fn, device=self._device)
-        if missing or unexpected:
-            err_msg = "Not able to load the model weights for {}".format(
-                self._model_type
-            )
-            self._log().error(err_msg)
-            raise ValueError(err_msg)
+            self._remove_padding = False
+            if self._model_type == "TableModel02":
+                self._remove_padding = True
+
+            # Load model from safetensors
+            save_dir = self._config["model"]["save_dir"]
+            models_fn = glob.glob(f"{save_dir}/tableformer_*.safetensors")
+            if not models_fn:
+                err_msg = "Not able to find a model file for {}".format(
+                    self._model_type
+                )
+                self._log().error(err_msg)
+                raise ValueError(err_msg)
+            model_fn = models_fn[
+                0
+            ]  # Take the first tableformer safetensors file inside the save_dir
+            missing, unexpected = load_model(model, model_fn, device=self._device)
+            if missing or unexpected:
+                err_msg = "Not able to load the model weights for {}".format(
+                    self._model_type
+                )
+                self._log().error(err_msg)
+                raise ValueError(err_msg)
 
         return model
 

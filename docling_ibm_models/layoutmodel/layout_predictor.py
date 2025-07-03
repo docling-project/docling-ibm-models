@@ -4,6 +4,7 @@
 #
 import logging
 import os
+import threading
 from collections.abc import Iterable
 from typing import Set, Union
 
@@ -14,6 +15,9 @@ from PIL import Image
 from transformers import RTDetrForObjectDetection, RTDetrImageProcessor
 
 _log = logging.getLogger(__name__)
+
+# Global lock for model initialization to prevent threading issues
+_model_init_lock = threading.Lock()
 
 
 class LayoutPredictor:
@@ -87,10 +91,13 @@ class LayoutPredictor:
         processor_config = os.path.join(artifact_path, "preprocessor_config.json")
         model_config = os.path.join(artifact_path, "config.json")
         self._image_processor = RTDetrImageProcessor.from_json_file(processor_config)
-        self._model = RTDetrForObjectDetection.from_pretrained(
-            artifact_path, config=model_config
-        ).to(self._device)
-        self._model.eval()
+
+        # Use lock to prevent threading issues during model initialization
+        with _model_init_lock:
+            self._model = RTDetrForObjectDetection.from_pretrained(
+                artifact_path, config=model_config
+            ).to(self._device)
+            self._model.eval()
 
         _log.debug("LayoutPredictor settings: {}".format(self.info()))
 
