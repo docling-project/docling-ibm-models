@@ -94,18 +94,17 @@ class DocumentFigureClassifierPredictor:
             self._model = model.to(device)
             self._model.eval()
 
-        self._image_processor = transforms.Compose(
-            [
-                transforms.Resize((224, 224)),
-                transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=[0.485, 0.456, 0.406],
-                    std=[0.47853944, 0.4732864, 0.47434163],
-                ),
-            ]
-        )
+            self._image_processor = transforms.Compose(
+                [
+                    transforms.Resize((224, 224)),
+                    transforms.ToTensor(),
+                    transforms.Normalize(
+                        mean=[0.485, 0.456, 0.406],
+                        std=[0.47853944, 0.4732864, 0.47434163],
+                    ),
+                ]
+            )
 
-        with _model_init_lock:
             config = AutoConfig.from_pretrained(artifacts_path)
 
         self._classes = list(config.id2label.values())
