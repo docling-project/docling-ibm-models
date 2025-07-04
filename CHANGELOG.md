@@ -1,3 +1,13 @@
+## [v3.7.0](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.7.0) - 2025-07-04
+
+### Feature
+
+* Add `enumerated` field inference to `ListItemMarkerProcessor` ([#119](https://github.com/docling-project/docling-ibm-models/issues/119)) ([`a7fa2b8`](https://github.com/docling-project/docling-ibm-models/commit/a7fa2b819939adf94cfe7bd32425b0a75f7af18f))
+
+### Fix
+
+* Secure torch model inits with global locks ([#120](https://github.com/docling-project/docling-ibm-models/issues/120)) ([`bfef09c`](https://github.com/docling-project/docling-ibm-models/commit/bfef09c45c8fddae8853413d11a644fbefd18dc4))
+
 ## [v3.6.0](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.6.0) - 2025-06-20
 
 ### Feature
