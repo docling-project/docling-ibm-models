@@ -8,7 +8,7 @@ import os
 import sys
 import time
 from pathlib import Path
-
+from typing import Any, Dict, List
 import numpy as np
 import torch
 from huggingface_hub import snapshot_download
@@ -17,7 +17,9 @@ from PIL import Image, ImageDraw, ImageFont
 from docling_ibm_models.layoutmodel.layout_predictor import LayoutPredictor
 
 
-def save_predictions(prefix: str, viz_dir: str, img_fn: str, img, predictions: dict):
+def save_predictions(
+    prefix: str, viz_dir: str, img_fn: Path, img, predictions: List[Dict[str, Any]]
+):
     img_path = Path(img_fn)
 
     image = img.copy()
@@ -37,7 +39,7 @@ def save_predictions(prefix: str, viz_dir: str, img_fn: str, img, predictions: d
             confidence = round(pred["confidence"], 3)
 
             # Save the predictions in txt file
-            pred_txt = f"{prefix} {img_fn}: {label} - {bbox} - {confidence}\n"
+            pred_txt = f"{prefix} {str(img_fn)}: {label} - {bbox} - {confidence}\n"
             fd.write(pred_txt)
 
             # Draw the bbox and label
@@ -59,6 +61,7 @@ def demo(
     num_threads: int,
     img_dir: str,
     viz_dir: str,
+    threshold: float,
 ):
     r"""
     Apply LayoutPredictor on the input image directory
@@ -67,7 +70,7 @@ def demo(
     pdf_image = pyvips.Image.new_from_file("test_data/ADS.2007.page_123.pdf", page=0)
     """
     # Create the layout predictor
-    lpredictor = LayoutPredictor(artifact_path, device=device, num_threads=num_threads)
+    predictor = LayoutPredictor(artifact_path, device=device, num_threads=num_threads, base_threshold=threshold)
 
     # Predict all test png images
     t0 = time.perf_counter()
@@ -79,7 +82,7 @@ def demo(
         with Image.open(img_fn) as image:
             # Predict layout
             img_t0 = time.perf_counter()
-            preds = list(lpredictor.predict(image))
+            preds: List[Dict[str, Any]] = list(predictor.predict(image))
             img_ms = 1000 * (time.perf_counter() - img_t0)
             logger.debug("Prediction(ms): {:.2f}".format(img_ms))
 
@@ -97,10 +100,12 @@ def demo(
 
 def main(args):
     r""" """
-    num_threads = int(args.num_threads) if args.num_threads is not None else None
+    num_threads = int(args.num_threads) if args.num_threads is not None else 4
     device = args.device.lower()
     img_dir = args.img_dir
     viz_dir = args.viz_dir
+    hugging_face_repo = args.hugging_face_repo
+    threshold = float(args.threshold)
 
     # Initialize logger
     logging.basicConfig(level=logging.DEBUG)
@@ -118,13 +123,10 @@ def main(args):
     Path(viz_dir).mkdir(parents=True, exist_ok=True)
 
     # Download models from HF
-    download_path = snapshot_download(
-        repo_id="ds4sd/docling-models", revision="v2.1.0"
-    )
-    artifact_path = os.path.join(download_path, "model_artifacts/layout")
+    download_path = snapshot_download(repo_id=hugging_face_repo)
 
     # Test the LayoutPredictor
-    demo(logger, artifact_path, device, num_threads, img_dir, viz_dir)
+    demo(logger, download_path, device, num_threads, img_dir, viz_dir, threshold)
 
 
 if __name__ == "__main__":
@@ -132,6 +134,25 @@ if __name__ == "__main__":
     python -m demo.demo_layout_predictor -i <images_dir>
     """
     parser = argparse.ArgumentParser(description="Test the LayoutPredictor")
+
+    supported_hf_repos = [
+        "ds4sd/docling-layout-old",
+        "ds4sd/docling-layout-heron",
+        "ds4sd/docling-layout-heron-101",
+        "ds4sd/docling-layout-egret-medium",
+        "ds4sd/docling-layout-egret-large",
+        "ds4sd/docling-layout-egret-xlarge",
+    ]
+    parser.add_argument(
+        "-r",
+        "--hugging-face-repo",
+        required=False,
+        default="ds4sd/docling-layout-old",
+        help=f"The hugging face repo id: [{', '.join(supported_hf_repos)}]",
+    )
+    parser.add_argument(
+        "-t", "--threshold", required=False, default=0.3, help="Threshold for the LayoutPredictor"
+    )
     parser.add_argument(
         "-d", "--device", required=False, default="cpu", help="One of [cpu, cuda, mps]"
     )
