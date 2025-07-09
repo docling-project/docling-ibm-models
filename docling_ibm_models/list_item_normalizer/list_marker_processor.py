@@ -7,12 +7,12 @@ merge marker-only TextItems with their content to create proper ListItems.
 
 import logging
 import re
-from typing import Union
+from typing import Optional, Union
 
 from docling_core.types.doc.document import (
-    DocItemLabel,
     DoclingDocument,
     ListItem,
+    NodeItem,
     ProvenanceItem,
     RefItem,
     TextItem,
@@ -33,8 +33,9 @@ class ListItemMarkerProcessor:
     4. Group consecutive ListItems into appropriate list containers
     """
 
-    def __init__(self):
+    def __init__(self, infer_enumerated: bool = True):
         """Initialize the processor with marker patterns."""
+        self._infer_enumerated = infer_enumerated
         # Bullet markers (unordered lists)
         self._bullet_patterns = [
             r"[\u2022\u2023\u25E6\u2043\u204C\u204D\u2219\u25AA\u25AB\u25CF\u25CB]",  # Various bullet symbols
@@ -73,10 +74,6 @@ class ListItemMarkerProcessor:
             for pattern in self._numbered_patterns
         ]
 
-        self._compiled_item_patterns = (
-            self._compiled_bullet_item_patterns + self._compiled_numbered_item_patterns
-        )
-
     def _is_bullet_marker(self, text: str) -> bool:
         """Check if text is a bullet marker."""
         text = text.strip()
@@ -87,6 +84,46 @@ class ListItemMarkerProcessor:
         text = text.strip()
         return any(pattern.match(text) for pattern in self._compiled_numbered_patterns)
 
+    def _is_bullet_item(self, text: str) -> bool:
+        return any(
+            pattern.match(text) for pattern in self._compiled_bullet_item_patterns
+        )
+
+    def _is_numbered_item(self, text: str) -> bool:
+        return any(
+            pattern.match(text) for pattern in self._compiled_numbered_item_patterns
+        )
+
+    @classmethod
+    def _create_list_item(
+        cls,
+        self_ref,
+        marker: str,
+        text: str,
+        orig: str,
+        prov: list[ProvenanceItem],
+        enumerated: Optional[bool] = None,
+    ) -> ListItem:
+        item = ListItem(
+            self_ref=self_ref,
+            marker=marker,
+            text=text,
+            orig=orig,
+            prov=prov,
+        )
+        if enumerated is not None:
+            item.enumerated = enumerated
+        return item
+
+    def _find_match(
+        self, text: str, patterns: list[re.Pattern]
+    ) -> Optional[re.Match[str]]:
+        for pattern in patterns:
+            mtch = pattern.match(text)
+            if mtch:
+                return mtch
+        return None
+
     def _find_marker_content_pairs(self, doc: DoclingDocument):
         """
         Find pairs of marker-only TextItems and their content TextItems.
@@ -95,26 +132,24 @@ class ListItemMarkerProcessor:
             List of (marker_item, content_item) tuples. content_item can be None
             if the marker item already contains content.
         """
-        self._matched_items: dict[int, tuple[RefItem, bool]] = (
+        self._matched_items: dict[int, tuple[RefItem, bool, bool]] = (
             {}
-        )  # index to (self_ref, is_pure_marker)
+        )  # index to (self_ref, is_pure_marker, is_enumerated)
         self._other: dict[int, RefItem] = {}  # index to self_ref
 
-        for i, (item, level) in enumerate(doc.iterate_items(with_groups=False)):
+        for i, (item, _) in enumerate(doc.iterate_items(with_groups=False)):
             if not isinstance(item, TextItem):
                 continue
 
             if self._is_bullet_marker(item.orig):
-                self._matched_items[i] = (item.get_ref(), True)
+                self._matched_items[i] = (item.get_ref(), True, False)
             elif self._is_numbered_marker(item.orig):
-                self._matched_items[i] = (item.get_ref(), True)
+                self._matched_items[i] = (item.get_ref(), True, True)
+            elif self._is_bullet_item(item.orig):
+                self._matched_items[i] = (item.get_ref(), False, False)
+            elif self._is_numbered_item(item.orig):
+                self._matched_items[i] = (item.get_ref(), False, True)
             else:
-                for pattern in self._compiled_item_patterns:
-                    mtch = pattern.match(item.orig)
-                    if mtch:
-                        self._matched_items[i] = (item.get_ref(), False)
-
-            if i not in self._matched_items:
                 self._other[i] = item.get_ref()
 
     def _group_consecutive_list_items(self, doc: DoclingDocument) -> DoclingDocument:
@@ -142,16 +177,27 @@ class ListItemMarkerProcessor:
             The method modifies the input item in place when a pattern matches.
             If the item is not actually a ListItem type, a warning is logged.
         """
-        for pattern in self._compiled_item_patterns:
-            mtch = pattern.match(item.orig)
-            if mtch:
-                if isinstance(item, ListItem):  # update item in place
-                    item.marker = mtch[1]
-                    item.text = mtch[2]
-                else:
-                    _log.warning(
-                        f"matching text for bullet_item_patterns that is not ListItem: {item.label}"
-                    )
+
+        is_enumerated: bool
+        if mtch := self._find_match(
+            text=item.orig, patterns=self._compiled_bullet_item_patterns
+        ):
+            is_enumerated = False
+        elif mtch := self._find_match(
+            text=item.orig, patterns=self._compiled_numbered_item_patterns
+        ):
+            is_enumerated = True
+
+        if mtch:
+            if isinstance(item, ListItem):  # update item in place
+                item.marker = mtch[1]
+                item.text = mtch[2]
+                if self._infer_enumerated:
+                    item.enumerated = is_enumerated
+            else:
+                _log.warning(
+                    f"matching text for bullet_item_patterns that is not ListItem: {item.label}"
+                )
         return item
 
     def process_text_item(self, item: TextItem) -> Union[TextItem, ListItem]:
@@ -177,30 +223,43 @@ class ListItemMarkerProcessor:
             their semantic meaning. A warning is logged if pattern matching occurs
             on unexpected item types.
         """
-        for pattern in self._compiled_item_patterns:
-            mtch = pattern.match(item.orig)
-            if mtch:
-                if isinstance(item, ListItem):  # update item in place
-                    item.marker = mtch[1]
-                    item.text = mtch[2]
+        is_enumerated: bool
+        if mtch := self._find_match(
+            text=item.orig, patterns=self._compiled_bullet_item_patterns
+        ):
+            is_enumerated = False
+        elif mtch := self._find_match(
+            text=item.orig, patterns=self._compiled_numbered_item_patterns
+        ):
+            is_enumerated = True
 
-                    return item
-                elif isinstance(item, TextItem) and (
-                    item.label
-                    not in [DocItemLabel.SECTION_HEADER, DocItemLabel.FOOTNOTE]
-                ):
-                    # Create new ListItem
-                    return ListItem(
-                        self_ref=item.get_ref().cref,
-                        marker=mtch[1],
-                        text=mtch[2],
-                        orig=item.orig,
-                        prov=item.prov,
-                    )
-                else:
-                    _log.warning(
-                        f"matching text for bullet_item_patterns that is not ListItem: {item.label}"
-                    )
+        if mtch:
+            marker = mtch[1]
+            text = mtch[2]
+
+            if isinstance(item, ListItem):  # update item in place
+                item.marker = marker
+                item.text = text
+                if self._infer_enumerated:
+                    item.enumerated = is_enumerated
+
+                return item
+            elif isinstance(item, TextItem) and (
+                item.label not in [DocItemLabel.SECTION_HEADER, DocItemLabel.FOOTNOTE]
+            ):
+                # Create new ListItem
+                return self._create_list_item(
+                    self_ref=item.get_ref().cref,
+                    marker=marker,
+                    text=text,
+                    orig=item.orig,
+                    prov=item.prov,
+                    enumerated=is_enumerated if self._infer_enumerated else None,
+                )
+            else:
+                _log.warning(
+                    f"matching text for bullet_item_patterns that is not ListItem: {item.label}"
+                )
         return item
 
     def update_list_items_in_place(
@@ -217,30 +276,19 @@ class ListItemMarkerProcessor:
     def merge_markers_and_text_items_into_list_items(
         self, doc: DoclingDocument
     ) -> DoclingDocument:
-        def create_listitem(
-            marker_text: str,
-            content_text: str,
-            orig_text: str,
-            prov: list[ProvenanceItem],
-        ) -> ListItem:
-            # Create new ListItem
-            return ListItem(
-                self_ref="#",
-                marker=marker_text,
-                text=content_text,
-                orig=orig_text,
-                prov=prov,
-            )
 
         # Find all marker-content pairs: this function will identify text-items
         # with a marker fused into the text
         self._find_marker_content_pairs(doc)
 
+        # Accumulate items for post-loop deletion to avoid reference validity issues
+        to_delete: list[NodeItem] = []
+
         # If you find a sole marker-item followed by a text, there are
         # good chances we need to merge them into a list-item. This
         # function is only necessary as long as the layout-model does not
         # recognize list-items properly
-        for ind, (self_ref, is_marker) in self._matched_items.items():
+        for ind, (self_ref, is_marker, is_enumerated) in self._matched_items.items():
 
             if is_marker:
 
@@ -258,11 +306,21 @@ class ListItemMarkerProcessor:
                         prov = marker_item.prov
                         prov.extend(next_item.prov)
 
-                        list_item = create_listitem(
-                            marker_text=marker_text,
-                            content_text=content_text,
-                            orig_text=f"{marker_text} {content_text}",
+                        list_item = self._create_list_item(
+                            self_ref="#",
+                            marker=marker_text,
+                            text=content_text,
+                            orig=f"{marker_text} {content_text}",
                             prov=prov,
+                            enumerated=(
+                                is_enumerated
+                                if self._infer_enumerated
+                                else (
+                                    marker_item.enumerated
+                                    if isinstance(marker_item, ListItem)
+                                    else None
+                                )
+                            ),
                         )
 
                         # Insert the new ListItem
@@ -270,9 +328,10 @@ class ListItemMarkerProcessor:
                             new_item=list_item, sibling=marker_item
                         )
 
-                        # Delete original items
-                        items_to_delete = [marker_item, next_item]
-                        doc.delete_items(node_items=items_to_delete)
+                        # Accumulate items to delete
+                        to_delete.extend([marker_item, next_item])
+
+        doc.delete_items(node_items=to_delete)
 
         return doc
 

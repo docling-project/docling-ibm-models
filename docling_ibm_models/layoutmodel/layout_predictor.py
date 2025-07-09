@@ -6,13 +6,15 @@ import logging
 import os
 import threading
 from collections.abc import Iterable
-from typing import Set, Union
+from typing import Dict, List, Set, Union
 
 import numpy as np
 import torch
-import torchvision.transforms as T
 from PIL import Image
-from transformers import RTDetrForObjectDetection, RTDetrImageProcessor
+from torch import Tensor
+from transformers import AutoModelForObjectDetection, RTDetrImageProcessor
+
+from docling_ibm_models.layoutmodel.labels import LayoutLabels
 
 _log = logging.getLogger(__name__)
 
@@ -46,35 +48,14 @@ class LayoutPredictor:
         ------
         FileNotFoundError when the model's torch file is missing
         """
-        # Initialize classes map:
-        self._classes_map = {
-            0: "background",
-            1: "Caption",
-            2: "Footnote",
-            3: "Formula",
-            4: "List-item",
-            5: "Page-footer",
-            6: "Page-header",
-            7: "Picture",
-            8: "Section-header",
-            9: "Table",
-            10: "Text",
-            11: "Title",
-            12: "Document Index",
-            13: "Code",
-            14: "Checkbox-Selected",
-            15: "Checkbox-Unselected",
-            16: "Form",
-            17: "Key-Value Region",
-        }
-
         # Blacklisted classes
         self._black_classes = blacklist_classes  # set(["Form", "Key-Value Region"])
 
+        # Canonical classes
+        self._labels = LayoutLabels()
+
         # Set basic params
         self._threshold = base_threshold  # Score threshold
-        self._image_size = 640
-        self._size = np.asarray([[self._image_size, self._image_size]], dtype=np.int64)
 
         # Set number of threads for CPU
         self._device = torch.device(device)
@@ -82,22 +63,39 @@ class LayoutPredictor:
         if device == "cpu":
             torch.set_num_threads(self._num_threads)
 
-        # Model file and configurations
+        # Load model file and configurations
+        self._processor_config = os.path.join(artifact_path, "preprocessor_config.json")
+        self._model_config = os.path.join(artifact_path, "config.json")
         self._st_fn = os.path.join(artifact_path, "model.safetensors")
         if not os.path.isfile(self._st_fn):
             raise FileNotFoundError("Missing safe tensors file: {}".format(self._st_fn))
+        if not os.path.isfile(self._processor_config):
+            raise FileNotFoundError(
+                f"Missing processor config file: {self._processor_config}"
+            )
+        if not os.path.isfile(self._model_config):
+            raise FileNotFoundError(f"Missing model config file: {self._model_config}")
 
         # Load model and move to device
-        processor_config = os.path.join(artifact_path, "preprocessor_config.json")
-        model_config = os.path.join(artifact_path, "config.json")
-        self._image_processor = RTDetrImageProcessor.from_json_file(processor_config)
+        self._image_processor = RTDetrImageProcessor.from_json_file(
+            self._processor_config
+        )
 
         # Use lock to prevent threading issues during model initialization
         with _model_init_lock:
-            self._model = RTDetrForObjectDetection.from_pretrained(
-                artifact_path, config=model_config
+            self._model = AutoModelForObjectDetection.from_pretrained(
+                artifact_path, config=self._model_config
             ).to(self._device)
             self._model.eval()
+
+        # Set classes map
+        self._model_name = type(self._model).__name__
+        if self._model_name == "RTDetrForObjectDetection":
+            self._classes_map = self._labels.shifted_canonical_categories()
+            self._label_offset = 1
+        else:
+            self._classes_map = self._labels.canonical_categories()
+            self._label_offset = 0
 
         _log.debug("LayoutPredictor settings: {}".format(self.info()))
 
@@ -106,10 +104,11 @@ class LayoutPredictor:
         Get information about the configuration of LayoutPredictor
         """
         info = {
+            "model_name": self._model_name,
             "safe_tensors_file": self._st_fn,
             "device": self._device.type,
             "num_threads": self._num_threads,
-            "image_size": self._image_size,
+            "image_size": self._image_processor.size,
             "threshold": self._threshold,
         }
         return info
@@ -141,28 +140,27 @@ class LayoutPredictor:
         else:
             raise TypeError("Not supported input image format")
 
-        resize = {"height": self._image_size, "width": self._image_size}
-        inputs = self._image_processor(
-            images=page_img,
-            return_tensors="pt",
-            size=resize,
-        ).to(self._device)
+        target_sizes = torch.tensor([page_img.size[::-1]])
+        inputs = self._image_processor(images=[page_img], return_tensors="pt").to(
+            self._device
+        )
         outputs = self._model(**inputs)
-        results = self._image_processor.post_process_object_detection(
-            outputs,
-            target_sizes=torch.tensor([page_img.size[::-1]]),
-            threshold=self._threshold,
+        results: List[Dict[str, Tensor]] = (
+            self._image_processor.post_process_object_detection(
+                outputs,
+                target_sizes=target_sizes,
+                threshold=self._threshold,
+            )
         )
 
         w, h = page_img.size
-
         result = results[0]
         for score, label_id, box in zip(
             result["scores"], result["labels"], result["boxes"]
         ):
             score = float(score.item())
 
-            label_id = int(label_id.item()) + 1  # Advance the label_id
+            label_id = int(label_id.item()) + self._label_offset
             label_str = self._classes_map[label_id]
 
             # Filter out blacklisted classes
