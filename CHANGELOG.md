@@ -1,3 +1,9 @@
+## [v3.8.0](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.8.0) - 2025-07-09
+
+### Feature
+
+* Refactor the LayoutPredictor to support all layout models ([#121](https://github.com/docling-project/docling-ibm-models/issues/121)) ([`505fbf4`](https://github.com/docling-project/docling-ibm-models/commit/505fbf4841e362ed7812d48ad08295ca8434e645))
+
 ## [v3.7.0](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.7.0) - 2025-07-04
 
 ### Feature
