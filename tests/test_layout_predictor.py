@@ -4,13 +4,11 @@
 #
 import os
 import json
-from pathlib import Path
 
-import torch
 import numpy as np
 import pytest
 from huggingface_hub import snapshot_download
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 
 from docling_ibm_models.layoutmodel.layout_predictor import LayoutPredictor
 
@@ -35,8 +33,7 @@ def init() -> dict:
     }
 
     # Download models from HF
-    download_path = snapshot_download(repo_id="ds4sd/docling-models", revision="v2.1.0")
-    artifact_path = os.path.join(download_path, "model_artifacts/layout")
+    artifact_path = snapshot_download(repo_id="ds4sd/docling-layout-old")
 
     # Add the missing config keys
     init["artifact_path"] = artifact_path
