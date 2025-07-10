@@ -90,8 +90,9 @@ class DocumentFigureClassifierPredictor:
             torch.set_num_threads(self._num_threads)
 
         with _model_init_lock:
-            model = AutoModelForImageClassification.from_pretrained(artifacts_path)
-            self._model = model.to(device)
+            self._model = AutoModelForImageClassification.from_pretrained(
+                artifacts_path, device_map=device
+            )
             self._model.eval()
 
             self._image_processor = transforms.Compose(
