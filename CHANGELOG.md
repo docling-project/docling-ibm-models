@@ -1,3 +1,9 @@
+## [v3.8.1](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.8.1) - 2025-07-10
+
+### Fix
+
+* Table cell alignment regression ([#122](https://github.com/docling-project/docling-ibm-models/issues/122)) ([`389161c`](https://github.com/docling-project/docling-ibm-models/commit/389161caf0630e740de3063cb14c8ada39fc7296))
+
 ## [v3.8.0](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.8.0) - 2025-07-09
 
 ### Feature
