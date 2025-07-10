@@ -474,9 +474,6 @@ class MatchingPostProcessor:
         pdf_cell_dict = {pdf_cell["id"]: pdf_cell["bbox"] for pdf_cell in pdf_cells}
         table_cell_dict = {cell["cell_id"]: cell for cell in table_cells}
 
-        # Track unique cells we're going to add
-        processed_cells = set()
-
         # First pass - create initial new_table_cells with aligned bboxes
         new_table_cells = []
 
@@ -491,9 +488,6 @@ class MatchingPostProcessor:
 
             # Process each unique table cell
             for cell_id in table_cell_ids:
-                if cell_id in processed_cells:
-                    continue
-
                 table_cell = table_cell_dict.get(cell_id)
                 if not table_cell:
                     continue
@@ -507,7 +501,6 @@ class MatchingPostProcessor:
                     new_table_cell["cell_class"] = "2"
 
                 new_table_cells.append(new_table_cell)
-                processed_cells.add(cell_id)
 
         # Second pass - aggregate bboxes for duplicate cells
         cell_to_bboxes = {}
