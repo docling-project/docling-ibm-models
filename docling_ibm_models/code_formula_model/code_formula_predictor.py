@@ -89,8 +89,8 @@ class CodeFormulaPredictor:
             self._tokenizer = AutoTokenizer.from_pretrained(
                 artifacts_path, use_fast=True, padding_side="left"
             )
-            self._model = SamOPTForCausalLM.from_pretrained(artifacts_path).to(
-                self._device
+            self._model = SamOPTForCausalLM.from_pretrained(
+                artifacts_path, device_map=self._device
             )
             self._model.eval()
 

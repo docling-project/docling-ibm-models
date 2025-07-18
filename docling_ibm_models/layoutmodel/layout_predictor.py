@@ -84,8 +84,8 @@ class LayoutPredictor:
         # Use lock to prevent threading issues during model initialization
         with _model_init_lock:
             self._model = AutoModelForObjectDetection.from_pretrained(
-                artifact_path, config=self._model_config
-            ).to(self._device)
+                artifact_path, config=self._model_config, device_map=self._device
+            )
             self._model.eval()
 
         # Set classes map
