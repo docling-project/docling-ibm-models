@@ -1,6 +1,6 @@
 [project]
 name = "docling-ibm-models"
-version = "3.8.1" # DO NOT EDIT, updated automatically
+version = "3.8.2" # DO NOT EDIT, updated automatically
 description = "This package contains the AI models used by the Docling PDF conversion package"
 license = "MIT"
 keywords = ["docling", "convert", "document", "pdf", "layout model", "segmentation", "table structure", "table former"]

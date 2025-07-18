@@ -1,3 +1,10 @@
+## [v3.8.2](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.8.2) - 2025-07-18
+
+### Fix
+
+* Use device_map for transformer models ([#124](https://github.com/docling-project/docling-ibm-models/issues/124)) ([`58656c3`](https://github.com/docling-project/docling-ibm-models/commit/58656c319593708b341c3a350ffaeb87d0bc9d63))
+* Improve calculation of num_cols and num_rows ([#126](https://github.com/docling-project/docling-ibm-models/issues/126)) ([`a45d146`](https://github.com/docling-project/docling-ibm-models/commit/a45d1460161e50733336118c2559118ff192ea30))
+
 ## [v3.8.1](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.8.1) - 2025-07-10
 
 ### Fix
