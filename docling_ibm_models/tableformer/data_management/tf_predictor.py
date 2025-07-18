@@ -515,35 +515,27 @@ class TFPredictor:
                 indexing_start_cols = (
                     []
                 )  # Index of original start col IDs (not indexes)
-                indexing_end_cols = []  # Index of original end col IDs (not indexes)
                 indexing_start_rows = (
                     []
                 )  # Index of original start row IDs (not indexes)
-                indexing_end_rows = []  # Index of original end row IDs (not indexes)
 
                 # First, collect all possible predicted IDs, to be used as indexes
                 # ID's returned by Tableformer are sequential, but might contain gaps
                 for tf_response_cell in tf_responses:
                     start_col_offset_idx = tf_response_cell["start_col_offset_idx"]
-                    end_col_offset_idx = tf_response_cell["end_col_offset_idx"]
                     start_row_offset_idx = tf_response_cell["start_row_offset_idx"]
-                    end_row_offset_idx = tf_response_cell["end_row_offset_idx"]
 
                     # Collect all possible col/row IDs:
                     if start_col_offset_idx not in indexing_start_cols:
                         indexing_start_cols.append(start_col_offset_idx)
-                    if end_col_offset_idx not in indexing_end_cols:
-                        indexing_end_cols.append(end_col_offset_idx)
                     if start_row_offset_idx not in indexing_start_rows:
                         indexing_start_rows.append(start_row_offset_idx)
-                    if end_row_offset_idx not in indexing_end_rows:
-                        indexing_end_rows.append(end_row_offset_idx)
 
                 indexing_start_cols.sort()
-                indexing_end_cols.sort()
                 indexing_start_rows.sort()
-                indexing_end_rows.sort()
 
+                max_end_col_idx = 0
+                max_end_row_idx = 0
                 # After this - put actual indexes of IDs back into predicted structure...
                 for tf_response_cell in tf_responses:
                     tf_response_cell["start_col_offset_idx"] = (
@@ -555,6 +547,9 @@ class TFPredictor:
                         tf_response_cell["start_col_offset_idx"]
                         + tf_response_cell["col_span"]
                     )
+                    max_end_col_idx = max(
+                        max_end_col_idx, tf_response_cell["end_col_offset_idx"]
+                    )
                     tf_response_cell["start_row_offset_idx"] = (
                         indexing_start_rows.index(
                             tf_response_cell["start_row_offset_idx"]
@@ -564,9 +559,12 @@ class TFPredictor:
                         tf_response_cell["start_row_offset_idx"]
                         + tf_response_cell["row_span"]
                     )
+                    max_end_row_idx = max(
+                        max_end_row_idx, tf_response_cell["end_row_offset_idx"]
+                    )
                 # Counting matched cols/rows from actual indexes (and not ids)
-                predict_details["num_cols"] = len(indexing_end_cols)
-                predict_details["num_rows"] = len(indexing_end_rows)
+                predict_details["num_cols"] = max_end_col_idx
+                predict_details["num_rows"] = max_end_row_idx
             else:
                 otsl_seq = predict_details["prediction"]["rs_seq"]
                 predict_details["num_cols"] = otsl_seq.index("nl")
