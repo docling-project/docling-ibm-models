@@ -180,3 +180,91 @@ class LayoutPredictor:
                 "label": label_str,
                 "confidence": score,
             }
+
+    @torch.inference_mode()
+    def predict_batch(
+        self, images: List[Union[Image.Image, np.ndarray]]
+    ) -> List[List[dict]]:
+        """
+        Batch prediction for multiple images - more efficient than calling predict() multiple times.
+
+        Parameters
+        ----------
+        images : List[Union[Image.Image, np.ndarray]]
+            List of images to process in a single batch
+
+        Returns
+        -------
+        List[List[dict]]
+            List of prediction lists, one per input image. Each prediction dict contains:
+            "label", "confidence", "l", "t", "r", "b"
+        """
+        if not images:
+            return []
+
+        # Convert all images to RGB PIL format
+        pil_images = []
+        for img in images:
+            if isinstance(img, Image.Image):
+                pil_images.append(img.convert("RGB"))
+            elif isinstance(img, np.ndarray):
+                pil_images.append(Image.fromarray(img).convert("RGB"))
+            else:
+                raise TypeError("Not supported input image format")
+
+        # Get target sizes for all images
+        target_sizes = torch.tensor([img.size[::-1] for img in pil_images])
+
+        # Process all images in a single batch
+        inputs = self._image_processor(images=pil_images, return_tensors="pt").to(
+            self._device
+        )
+        outputs = self._model(**inputs)
+
+        # Post-process all results at once
+        results_list: List[Dict[str, Tensor]] = (
+            self._image_processor.post_process_object_detection(
+                outputs,
+                target_sizes=target_sizes,
+                threshold=self._threshold,
+            )
+        )
+
+        # Convert results to standard format for each image
+        all_predictions = []
+
+        for img, results in zip(pil_images, results_list):
+            w, h = img.size
+            predictions = []
+
+            for score, label_id, box in zip(
+                results["scores"], results["labels"], results["boxes"]
+            ):
+                score = float(score.item())
+                label_id = int(label_id.item()) + self._label_offset
+                label_str = self._classes_map[label_id]
+
+                # Filter out blacklisted classes
+                if label_str in self._black_classes:
+                    continue
+
+                bbox_float = [float(b.item()) for b in box]
+                l = min(w, max(0, bbox_float[0]))
+                t = min(h, max(0, bbox_float[1]))
+                r = min(w, max(0, bbox_float[2]))
+                b = min(h, max(0, bbox_float[3]))
+
+                predictions.append(
+                    {
+                        "l": l,
+                        "t": t,
+                        "r": r,
+                        "b": b,
+                        "label": label_str,
+                        "confidence": score,
+                    }
+                )
+
+            all_predictions.append(predictions)
+
+        return all_predictions
