@@ -1,3 +1,9 @@
+## [v3.9.0](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.9.0) - 2025-07-23
+
+### Feature
+
+* Add predict_batch to layout predictor ([#125](https://github.com/docling-project/docling-ibm-models/issues/125)) ([`93ce0ba`](https://github.com/docling-project/docling-ibm-models/commit/93ce0ba4e97d46e37c3e29d578dd9dbbd56b83e5))
+
 ## [v3.8.2](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.8.2) - 2025-07-18
 
 ### Fix

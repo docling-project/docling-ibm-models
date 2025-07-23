@@ -602,7 +602,7 @@ wheels = [
 
 [[package]]
 name = "docling-ibm-models"
-version = "3.8.2"
+version = "3.9.0"
 source = { editable = "." }
 dependencies = [
     { name = "accelerate" },
