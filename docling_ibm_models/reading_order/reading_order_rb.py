@@ -401,8 +401,11 @@ class ReadingOrderPredictor:
         return False
 
     def _do_horizontal_dilation(self, page_elems, dilated_page_elems):
-        page_size = page_elems[0].page_size
-        th = self._horizontal_dilation_threshold_norm * page_size.width
+        # Compute the dilation threshold
+        th = 0.0
+        if page_elems:
+            page_size = page_elems[0].page_size
+            th = self._horizontal_dilation_threshold_norm * page_size.width
 
         for i, pelem_i in enumerate(dilated_page_elems):
 
