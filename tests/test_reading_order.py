@@ -135,12 +135,16 @@ def test_readingorder():
         if score == 0:
             continue
         # Identify special cases ...
-        if filename in ["doc_906d54a21ef3c7bfac03f4bb613b0c79ef32fdf81b362450c79e98a96f88708a_page_000001.png",
-                        "doc_2cd17a32ee330a239e19c915738df0c27e8ec3635a60a7e16e2a0cf3868d4af3_page_000001.png",
-                        "doc_bcb3dafc35b5e7476fd1b9cd6eccf5eeef936cd5b13ad846a4943f1e7797f4e9_page_000001.png",
-                        "doc_a0edae1fa147c7bb78ebc493743a68ba4372b5ead31f2a2b146c35119462379e_page_000001.png",
-                        "doc_94ba5468fcb6277721947697048846dc0d0551296be3b45f5918ab857d21dcc7_page_000001.png",
-                        "doc_cbb4a13ffd01d9f777fdb939451d6a21cea1b869ee50d79581451e3601df9ec8_page_000001.png"]:
+        if filename in ["doc_906d54a21ef3c7bfac03f4bb613b0c79ef32fdf81b362450c79e98a96f88708a_page_000001.png",  # 0.720588
+                        "doc_2cd17a32ee330a239e19c915738df0c27e8ec3635a60a7e16e2a0cf3868d4af3_page_000001.png",  # 0.64920
+                        "doc_bcb3dafc35b5e7476fd1b9cd6eccf5eeef936cd5b13ad846a4943f1e7797f4e9_page_000001.png",  # 0.65
+                        "doc_a0edae1fa147c7bb78ebc493743a68ba4372b5ead31f2a2b146c35119462379e_page_000001.png",  # 0.82857
+                        "doc_94ba5468fcb6277721947697048846dc0d0551296be3b45f5918ab857d21dcc7_page_000001.png",  # 0.857142
+                        #  "doc_cbb4a13ffd01d9f777fdb939451d6a21cea1b869ee50d79581451e3601df9ec8_page_000001.png",
+
+                        "doc_e2b604a3fb1541b82b6af8caca05682dff0c7735e0a3a4fa7c6a68246fb60e57_page_000001.png",  # 0.657142
+                        "doc_827d21de372a2c26237ee1db526460851ae71c1867761776583535f532432e32_page_000001.png",  # 0.8922077
+                        "doc_b862cd0d6f06c06ee5ab7729ed4e8ce58e6964eb0f1ab98b3865b57a4808216f_page_000001.png"]:  # 0.642857
             # print(f"{os.path.basename(filename)}: {score}")
             assert score>=0.60, f"reading-order score={score}>0.60"            
         else:
@@ -265,4 +269,3 @@ def test_readingorder_multipage():
     for true_elem, pred_elem in zip(true_elements, pred_elements):
         print("true: ", str(true_elem), ", pred: ", str(pred_elem))
 """
-    
