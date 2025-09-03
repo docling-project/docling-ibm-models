@@ -1,3 +1,9 @@
+## [v3.9.1](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.9.1) - 2025-09-03
+
+### Fix
+
+* ReadingOrderPredictor: Improve the algorithm for the bounding boxes dilation ([#128](https://github.com/docling-project/docling-ibm-models/issues/128)) ([`82372a1`](https://github.com/docling-project/docling-ibm-models/commit/82372a1a340a4c25de1f30d3cf9fbbe21ebb0da6))
+
 ## [v3.9.0](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.9.0) - 2025-07-23
 
 ### Feature
