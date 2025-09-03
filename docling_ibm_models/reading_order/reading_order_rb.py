@@ -53,6 +53,9 @@ class ReadingOrderPredictor:
     def __init__(self):
         self.dilated_page_element = True
 
+        # Apply horizontal dilation only if it is less than this page-width normalized threshold
+        self._horizontal_dilation_threshold_norm = 0.15
+
         self.initialise()
 
     def initialise(self):
@@ -236,6 +239,7 @@ class ReadingOrderPredictor:
             dilated_page_elements: List[PageElement] = copy.deepcopy(
                 page_elements
             )  # deep-copy
+
             dilated_page_elements = self._do_horizontal_dilation(
                 page_elements, dilated_page_elements
             )
@@ -397,6 +401,11 @@ class ReadingOrderPredictor:
         return False
 
     def _do_horizontal_dilation(self, page_elems, dilated_page_elems):
+        # Compute the dilation threshold
+        th = 0.0
+        if page_elems:
+            page_size = page_elems[0].page_size
+            th = self._horizontal_dilation_threshold_norm * page_size.width
 
         for i, pelem_i in enumerate(dilated_page_elems):
 
@@ -409,14 +418,24 @@ class ReadingOrderPredictor:
             if i in self.up_map and len(self.up_map[i]) > 0:
                 pelem_up = page_elems[self.up_map[i][0]]
 
-                x0 = min(x0, pelem_up.l)
-                x1 = max(x1, pelem_up.r)
+                # Apply threshold for horizontal dilation
+                x0_dil = min(x0, pelem_up.l)
+                x1_dil = max(x1, pelem_up.r)
+                if (x0 - x0_dil) > th or (x1_dil - x1) > th:
+                    continue
+                x0 = x0_dil
+                x1 = x1_dil
 
             if i in self.dn_map and len(self.dn_map[i]) > 0:
                 pelem_dn = page_elems[self.dn_map[i][0]]
 
-                x0 = min(x0, pelem_dn.l)
-                x1 = max(x1, pelem_dn.r)
+                # Apply threshold for horizontal dilation
+                x0_dil = min(x0, pelem_dn.l)
+                x1_dil = max(x1, pelem_dn.r)
+                if (x0 - x0_dil) > th or (x1_dil - x1) > th:
+                    continue
+                x0 = x0_dil
+                x1 = x1_dil
 
             pelem_i.l = x0
             pelem_i.r = x1
