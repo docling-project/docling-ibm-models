@@ -71,15 +71,11 @@ dev = [
     "pytest-dependency~=0.6",
     "pytest-xdist~=3.3",
     "python-semantic-release~=7.32",
-    "datasets~=3.2",
+    'datasets~=3.2; python_version < "3.14"',
 ]
 
 [tool.uv]
 package = true
-
-[tool.uv.sources]
-docling-core = { git = "https://github.com/docling-project/docling-core/", rev = "py314" }
-
 
 [tool.setuptools.packages.find]
 include = ["docling_ibm_models*"]
