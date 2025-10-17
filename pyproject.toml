@@ -48,7 +48,7 @@ dependencies = [
 
 [project.optional-dependencies]
 opencv-python-headless = ['opencv-python-headless (>=4.6.0.66,<5.0.0.0)']
-opencv-python = ['opencv-python-headless (>=4.6.0.66,<5.0.0.0)']
+opencv-python = ['opencv-python (>=4.6.0.66,<5.0.0.0)']
 
 [project.urls]
 homepage = "https://github.com/docling-project/docling-ibm-models"
