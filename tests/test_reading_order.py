@@ -1,25 +1,17 @@
-import os
-import json
-import glob
 import copy
 
 import logging
 
-from pathlib import Path
 import sys
 
-import numpy as np
 import pytest
-from PIL import Image
-
-from datasets import load_dataset
 
 from typing import List, Dict
 import random
 
 from docling_ibm_models.reading_order.reading_order_rb import PageElement, ReadingOrderPredictor
 
-from docling_core.types.doc.document import DoclingDocument, DocItem, RefItem, TextItem, ContentLayer
+from docling_core.types.doc.document import DoclingDocument, DocItem, TextItem, ContentLayer
 
 # Configure logging
 logging.basicConfig(
@@ -64,6 +56,8 @@ def test_readingorder():
     if sys.version_info >= (3, 14):
         pytest.skip("Pyarrow is not yet available for Python 3.14, hence we cannot load the dataset.")
     
+    from datasets import load_dataset
+
 
     ro_scores, caption_scores, footnote_scores = [], [], []
     
