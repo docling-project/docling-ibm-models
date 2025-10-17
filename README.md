@@ -15,6 +15,18 @@ AI modules to support the Docling PDF document conversion project.
 - Layout model is an AI model that provides among other things ability to detect tables on the page. This package contains inference code for Layout model.
 
 
+## Install
+
+The package provides two variants which allow to seemlessly switch between `opencv-python` and `opencv-python-headless`.
+
+```sh
+# Option 1: with opencv-python-headless
+pip install "docling-ibm-models[opencv-python-headless]"
+
+# Option 2: with opencv-python
+pip install "docling-ibm-models[opencv-python]"
+```
+
 ## Pipeline Overview
 ![Architecture](docs/tablemodel_overview_color.png)
 

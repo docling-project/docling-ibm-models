@@ -36,7 +36,6 @@ dependencies = [
   'jsonlines (>=3.1.0,<5.0.0)',
   'Pillow (>=10.0.0,<13.0.0)',
   'tqdm (>=4.64.0,<5.0.0)',
-  'opencv-python-headless (>=4.6.0.66,<5.0.0.0)',
   'huggingface_hub (>=0.23,<1)',
   'safetensors[torch] (>=0.4.3,<1)',
   'pydantic (>=2.0.0,<3.0.0)',
@@ -47,6 +46,10 @@ dependencies = [
   'accelerate (>=1.2.1,<2.0.0)',
 ]
 
+[project.optional-dependencies]
+opencv-python-headless = ['opencv-python-headless (>=4.6.0.66,<5.0.0.0)']
+opencv-python = ['opencv-python-headless (>=4.6.0.66,<5.0.0.0)']
+
 [project.urls]
 homepage = "https://github.com/docling-project/docling-ibm-models"
 repository = "https://github.com/docling-project/docling-ibm-models"
@@ -55,6 +58,7 @@ changelog = "https://github.com/docling-project/docling-ibm-models/blob/main/CHA
 
 [dependency-groups]
 dev = [
+    "opencv-python-headless (>=4.6.0.66,<5.0.0.0)",
     "pre-commit~=3.7",
     "mypy~=1.10",
     "black~=24.4",
@@ -76,6 +80,12 @@ dev = [
 
 [tool.uv]
 package = true
+conflicts = [
+    [
+        { extra = "opencv-python-headless" },
+        { extra = "opencv-python" },
+    ]
+]
 
 [tool.setuptools.packages.find]
 include = ["docling_ibm_models*"]

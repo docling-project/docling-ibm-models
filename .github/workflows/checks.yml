@@ -39,7 +39,7 @@ jobs:
           path: ~/.cache/pre-commit
           key: pre-commit|${{ env.PY }}|${{ hashFiles('.pre-commit-config.yaml') }}
       - name: Install dependencies
-        run: uv sync --frozen --all-extras
+        run: uv sync --frozen
       - name: Check code quality and consistency
         run: pre-commit run --all-files
       - name: Run tests
@@ -65,7 +65,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: uv sync
       - name: Build package
         run: uv build
       - name: Check content of wheel

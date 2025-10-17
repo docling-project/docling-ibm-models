@@ -29,7 +29,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: uv sync
       - name: Build package
         run: uv build
       - name: Publish distribution 📦 to PyPI
