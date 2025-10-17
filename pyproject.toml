@@ -27,13 +27,14 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
 ]
 requires-python = '>=3.9,<4.0'
 dependencies = [
   'torch (>=2.2.2,<3.0.0)',
   'torchvision (>=0,<1)',
-  'jsonlines (>=3.1.0,<4.0.0)',
-  'Pillow (>=10.0.0,<12.0.0)',
+  'jsonlines (>=3.1.0,<5.0.0)',
+  'Pillow (>=10.0.0,<13.0.0)',
   'tqdm (>=4.64.0,<5.0.0)',
   'huggingface_hub (>=0.23,<1)',
   'safetensors[torch] (>=0.4.3,<1)',
@@ -74,7 +75,7 @@ dev = [
     "pytest-dependency~=0.6",
     "pytest-xdist~=3.3",
     "python-semantic-release~=7.32",
-    "datasets~=3.2",
+    'datasets~=3.2; python_version < "3.14"',
 ]
 
 [tool.uv]
