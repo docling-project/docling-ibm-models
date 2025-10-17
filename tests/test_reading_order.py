@@ -6,6 +6,7 @@ import copy
 import logging
 
 from pathlib import Path
+import sys
 
 import numpy as np
 import pytest
@@ -60,6 +61,9 @@ def spearman_rank_correlation(arr1, arr2):
     return rho
             
 def test_readingorder():
+    if sys.version_info >= (3, 14):
+        pytest.skip("Pyarrow is not yet available for Python 3.14, hence we cannot load the dataset.")
+    
 
     ro_scores, caption_scores, footnote_scores = [], [], []
     
