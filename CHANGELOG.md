@@ -1,3 +1,13 @@
+## [v3.10.0](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.10.0) - 2025-10-17
+
+### Feature
+
+* Support for python 3.14 ([#131](https://github.com/docling-project/docling-ibm-models/issues/131)) ([`e21d57c`](https://github.com/docling-project/docling-ibm-models/commit/e21d57cf79eb14be7409e1efab301187f65fd933))
+
+### Fix
+
+* Allow flexibility for opencv ([#130](https://github.com/docling-project/docling-ibm-models/issues/130)) ([`b9ff7eb`](https://github.com/docling-project/docling-ibm-models/commit/b9ff7eb3e2d03068bd451f11da2d6dac4a5dab0b))
+
 ## [v3.9.1](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.9.1) - 2025-09-03
 
 ### Fix
