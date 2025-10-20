@@ -5,6 +5,7 @@
 import copy
 import logging
 import re
+import sys
 from typing import Dict, List, Set, Tuple
 
 from docling_core.types.doc.base import BoundingBox, Size
@@ -12,6 +13,8 @@ from docling_core.types.doc.document import RefItem
 from docling_core.types.doc.labels import DocItemLabel
 from pydantic import BaseModel
 from rtree import index as rtree_index
+
+_log = logging.getLogger(__name__)
 
 
 class PageElement(BoundingBox):
@@ -96,17 +99,33 @@ class ReadingOrderPredictor:
             else:
                 page_to_elems[elem.page_no].append(elem)
 
+        max_elements = sys.getrecursionlimit()
         # print("headers ....")
         for page_no, elems in page_to_headers.items():
-            page_to_headers[page_no] = self._predict_page(elems)
+            bounded_elems = elems[:max_elements]
+            if max_elements < len(elems):
+                _log.warning(
+                    "Limiting the number of header elements to: %d", max_elements
+                )
+            page_to_headers[page_no] = self._predict_page(bounded_elems)
 
         # print("elems ....")
         for page_no, elems in page_to_elems.items():
-            page_to_elems[page_no] = self._predict_page(elems)
+            bounded_elems = elems[:max_elements]
+            if max_elements < len(elems):
+                _log.warning(
+                    "Limiting the number of page elements to: %d", max_elements
+                )
+            page_to_elems[page_no] = self._predict_page(bounded_elems)
 
         # print("footers ....")
         for page_no, elems in page_to_footers.items():
-            page_to_footers[page_no] = self._predict_page(elems)
+            bounded_elems = elems[:max_elements]
+            if max_elements < len(elems):
+                _log.warning(
+                    "Limiting the number of footer elements to: %d", max_elements
+                )
+            page_to_footers[page_no] = self._predict_page(bounded_elems)
 
         sorted_elements = []
         for page_no in page_nos:
@@ -511,7 +530,7 @@ class ReadingOrderPredictor:
                 self._depth_first_search_downwards(j, order, visited)
 
         if len(order) != len(provs):
-            logging.error("something went wrong")
+            _log.error("something went wrong")
 
         return order
 
