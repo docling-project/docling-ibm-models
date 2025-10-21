@@ -5,6 +5,7 @@
 import copy
 import logging
 import re
+import sys
 from typing import Dict, List, Set, Tuple
 
 from docling_core.types.doc.base import BoundingBox, Size
@@ -12,6 +13,8 @@ from docling_core.types.doc.document import RefItem
 from docling_core.types.doc.labels import DocItemLabel
 from pydantic import BaseModel
 from rtree import index as rtree_index
+
+_log = logging.getLogger(__name__)
 
 
 class PageElement(BoundingBox):
@@ -511,39 +514,52 @@ class ReadingOrderPredictor:
                 self._depth_first_search_downwards(j, order, visited)
 
         if len(order) != len(provs):
-            logging.error("something went wrong")
+            _log.error("something went wrong")
 
         return order
 
-    def _depth_first_search_upwards(
-        self, j: int, order: List[int], visited: List[bool]
-    ):
-        """depth_first_search_upwards"""
-
+    def _depth_first_search_upwards(self, j: int, visited: List[bool]):
+        """depth_first_search_upwards without recursion"""
         k = j
+        while True:
+            inds: List[int] = self.up_map[k]
+            found_not_visited = False
+            for ind in inds:
+                if not visited[ind]:
+                    k = ind
+                    found_not_visited = True
+                    break
 
-        inds = self.up_map[j]
-        for ind in inds:
-            if not visited[ind]:
-                return self._depth_first_search_upwards(ind, order, visited)
-
-        return k
+            # If a not-visited is found repeat the while loop
+            if not found_not_visited:
+                return k
 
     def _depth_first_search_downwards(
         self, j: int, order: List[int], visited: List[bool]
     ):
-        """depth_first_search_downwards"""
+        """depth_first_search_downwards without recursion"""
+        # The outermost list is the main stack.
+        # Each list element is a tuple containint the list of the indices to be checked and an offset
+        stack: List[Tuple[List[int], int]] = [(self.dn_map[j], 0)]
 
-        inds: List[int] = self.dn_map[j]
+        while stack:
+            inds, offset = stack[-1]
 
-        for i in inds:
-            k: int = self._depth_first_search_upwards(i, order, visited)
+            found_non_visited = False
+            if offset < len(inds):
+                for new_offset, i in enumerate(inds[offset:]):
+                    k: int = self._depth_first_search_upwards(i, visited)
 
-            if not visited[k]:
-                order.append(k)
-                visited[k] = True
+                    if not visited[k]:
+                        order.append(k)
+                        visited[k] = True
+                        stack[-1] = (inds, new_offset + 1)
+                        stack.append((self.dn_map[k], 0))
+                        found_non_visited = True
+                        break
 
-                self._depth_first_search_downwards(k, order, visited)
+            if not found_non_visited:
+                stack.pop()
 
     def _find_to_captions(
         self, page_elements: List[PageElement]
