@@ -1,3 +1,9 @@
+## [v3.10.1](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.10.1) - 2025-10-22
+
+### Fix
+
+* Replace the depth-first-search implementations in ReadingOrderPredictor with non-recursive ones ([#135](https://github.com/docling-project/docling-ibm-models/issues/135)) ([`78720cb`](https://github.com/docling-project/docling-ibm-models/commit/78720cb67b6b023183c07a785ddf33cac144f212))
+
 ## [v3.10.0](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.10.0) - 2025-10-17
 
 ### Feature
