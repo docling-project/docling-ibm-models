@@ -5,13 +5,12 @@
 import copy
 import logging
 import re
-import sys
+from dataclasses import dataclass, field
 from typing import Dict, List, Set, Tuple
 
 from docling_core.types.doc.base import BoundingBox, Size
 from docling_core.types.doc.document import RefItem
 from docling_core.types.doc.labels import DocItemLabel
-from pydantic import BaseModel
 from rtree import index as rtree_index
 
 _log = logging.getLogger(__name__)
@@ -48,6 +47,21 @@ class PageElement(BoundingBox):
         return self.cid + 1 == rhs.cid
 
 
+@dataclass
+class _ReadingOrderPredictorState:
+    """
+    State container of the reading order of a single page
+    """
+
+    h2i_map: Dict[int, int] = field(default_factory=dict)
+    i2h_map: Dict[int, int] = field(default_factory=dict)
+    l2r_map: Dict[int, int] = field(default_factory=dict)
+    r2l_map: Dict[int, int] = field(default_factory=dict)
+    up_map: Dict[int, List[int]] = field(default_factory=dict)
+    dn_map: Dict[int, List[int]] = field(default_factory=dict)
+    heads: List[int] = field(default_factory=list)
+
+
 class ReadingOrderPredictor:
     r"""
     Rule based reading order for DoclingDocument
@@ -58,20 +72,6 @@ class ReadingOrderPredictor:
 
         # Apply horizontal dilation only if it is less than this page-width normalized threshold
         self._horizontal_dilation_threshold_norm = 0.15
-
-        self.initialise()
-
-    def initialise(self):
-        self.h2i_map: Dict[int, int] = {}
-        self.i2h_map: Dict[int, int] = {}
-
-        self.l2r_map: Dict[int, int] = {}
-        self.r2l_map: Dict[int, int] = {}
-
-        self.up_map: Dict[int, List[int]] = {}
-        self.dn_map: Dict[int, List[int]] = {}
-
-        self.heads: List[int] = []
 
     def predict_reading_order(
         self, page_elements: List[PageElement]
@@ -217,10 +217,10 @@ class ReadingOrderPredictor:
 
     def _predict_page(self, page_elements: List[PageElement]) -> List[PageElement]:
         r"""
-        Reorder the output of the
+        Reorder the output of the page elements into a single-page reading order.
         """
 
-        self.initialise()
+        state = _ReadingOrderPredictorState()
 
         """
         for i, elem in enumerate(page_elements):
@@ -231,12 +231,11 @@ class ReadingOrderPredictor:
             page_elements[i] = elem.to_bottom_left_origin(  # type: ignore
                 page_height=page_elements[i].page_size.height
             )
+        self._init_h2i_map(page_elements, state)
 
-        self._init_h2i_map(page_elements)
+        self._init_l2r_map(page_elements, state)
 
-        self._init_l2r_map(page_elements)
-
-        self._init_ud_maps(page_elements)
+        self._init_ud_maps(page_elements, state)
 
         if self.dilated_page_element:
             dilated_page_elements: List[PageElement] = copy.deepcopy(
@@ -244,37 +243,37 @@ class ReadingOrderPredictor:
             )  # deep-copy
 
             dilated_page_elements = self._do_horizontal_dilation(
-                page_elements, dilated_page_elements
+                page_elements, dilated_page_elements, state
             )
 
             # redo with dilated provs
-            self._init_ud_maps(dilated_page_elements)
+            self._init_ud_maps(dilated_page_elements, state)
 
-        self._find_heads(page_elements)
+        self._find_heads(page_elements, state)
 
-        self._sort_ud_maps(page_elements)
+        self._sort_ud_maps(page_elements, state)
 
         """
-        print(f"heads: {self.heads}")
+        print(f"heads: {state.heads}")
 
         print("l2r: ")
-        for k,v in self.l2r_map.items():
+        for k,v in state.l2r_map.items():
             print(f" -> {k}: {v}")
 
         print("r2l: ")
-        for k,v in self.r2l_map.items():
+        for k,v in state.r2l_map.items():
             print(f" -> {k}: {v}")
 
         print("up: ")
-        for k,v in self.up_map.items():
+        for k,v in state.up_map.items():
             print(f" -> {k}: {v}")
 
         print("dn: ")
-        for k,v in self.dn_map.items():
+        for k,v in state.dn_map.items():
             print(f" -> {k}: {v}")            
         """
 
-        order: List[int] = self._find_order(page_elements)
+        order: List[int] = self._find_order(page_elements, state)
         # print(f"order: {order}")
 
         sorted_elements: List[PageElement] = []
@@ -288,17 +287,21 @@ class ReadingOrderPredictor:
 
         return sorted_elements
 
-    def _init_h2i_map(self, page_elems: List[PageElement]):
-        self.h2i_map = {}
-        self.i2h_map = {}
+    def _init_h2i_map(
+        self, page_elems: List[PageElement], state: _ReadingOrderPredictorState
+    ) -> None:
+        state.h2i_map = {}
+        state.i2h_map = {}
 
         for i, pelem in enumerate(page_elems):
-            self.h2i_map[pelem.cid] = i
-            self.i2h_map[i] = pelem.cid
+            state.h2i_map[pelem.cid] = i
+            state.i2h_map[i] = pelem.cid
 
-    def _init_l2r_map(self, page_elems: List[PageElement]):
-        self.l2r_map = {}
-        self.r2l_map = {}
+    def _init_l2r_map(
+        self, page_elems: List[PageElement], state: _ReadingOrderPredictorState
+    ) -> None:
+        state.l2r_map = {}
+        state.r2l_map = {}
 
         # this currently leads to errors ... might be necessary in the future ...
         for i, pelem_i in enumerate(page_elems):
@@ -309,22 +312,24 @@ class ReadingOrderPredictor:
                     and pelem_i.is_strictly_left_of(pelem_j)
                     and pelem_i.overlaps_vertically_with_iou(pelem_j, 0.8)
                 ):
-                    self.l2r_map[i] = j
-                    self.r2l_map[j] = i
+                    state.l2r_map[i] = j
+                    state.r2l_map[j] = i
 
-    def _init_ud_maps(self, page_elems: List[PageElement]) -> None:
+    def _init_ud_maps(
+        self, page_elems: List[PageElement], state: _ReadingOrderPredictorState
+    ) -> None:
         """
         Initialize up/down maps for reading order prediction using R-tree spatial indexing.
 
         Uses R-tree for spatial queries.
         Determines linear reading sequence by finding preceding/following elements.
         """
-        self.up_map = {}
-        self.dn_map = {}
+        state.up_map = {}
+        state.dn_map = {}
 
         for i, pelem_i in enumerate(page_elems):
-            self.up_map[i] = []
-            self.dn_map[i] = []
+            state.up_map[i] = []
+            state.dn_map[i] = []
 
         # Build R-tree spatial index
         spatial_idx = rtree_index.Index()
@@ -332,10 +337,10 @@ class ReadingOrderPredictor:
             spatial_idx.insert(i, (pelem.l, pelem.b, pelem.r, pelem.t))
 
         for j, pelem_j in enumerate(page_elems):
-            if j in self.r2l_map:
-                i = self.r2l_map[j]
-                self.dn_map[i] = [j]
-                self.up_map[j] = [i]
+            if j in state.r2l_map:
+                i = state.r2l_map[j]
+                state.dn_map[i] = [j]
+                state.up_map[j] = [i]
                 continue
 
             # Find elements above current that might precede it in reading order
@@ -360,11 +365,11 @@ class ReadingOrderPredictor:
                     spatial_idx, page_elems, i, j, pelem_i, pelem_j
                 ):
                     # Follow left-to-right mapping
-                    while i in self.l2r_map:
-                        i = self.l2r_map[i]
+                    while i in state.l2r_map:
+                        i = state.l2r_map[i]
 
-                    self.dn_map[i].append(j)
-                    self.up_map[j].append(i)
+                    state.dn_map[i].append(j)
+                    state.up_map[j].append(i)
 
     def _has_sequence_interruption(
         self,
@@ -403,7 +408,12 @@ class ReadingOrderPredictor:
 
         return False
 
-    def _do_horizontal_dilation(self, page_elems, dilated_page_elems):
+    def _do_horizontal_dilation(
+        self,
+        page_elems: List[PageElement],
+        dilated_page_elems: List[PageElement],
+        state: _ReadingOrderPredictorState,
+    ) -> List[PageElement]:
         # Compute the dilation threshold
         th = 0.0
         if page_elems:
@@ -418,8 +428,8 @@ class ReadingOrderPredictor:
             x1 = pelem_i.r
             y1 = pelem_i.t
 
-            if i in self.up_map and len(self.up_map[i]) > 0:
-                pelem_up = page_elems[self.up_map[i][0]]
+            if i in state.up_map and len(state.up_map[i]) > 0:
+                pelem_up = page_elems[state.up_map[i][0]]
 
                 # Apply threshold for horizontal dilation
                 x0_dil = min(x0, pelem_up.l)
@@ -429,8 +439,8 @@ class ReadingOrderPredictor:
                 x0 = x0_dil
                 x1 = x1_dil
 
-            if i in self.dn_map and len(self.dn_map[i]) > 0:
-                pelem_dn = page_elems[self.dn_map[i][0]]
+            if i in state.dn_map and len(state.dn_map[i]) > 0:
+                pelem_dn = page_elems[state.dn_map[i][0]]
 
                 # Apply threshold for horizontal dilation
                 x0_dil = min(x0, pelem_dn.l)
@@ -461,9 +471,11 @@ class ReadingOrderPredictor:
 
         return dilated_page_elems
 
-    def _find_heads(self, page_elems: List[PageElement]):
+    def _find_heads(
+        self, page_elems: List[PageElement], state: _ReadingOrderPredictorState
+    ) -> None:
         head_page_elems = []
-        for key, vals in self.up_map.items():
+        for key, vals in state.up_map.items():
             if len(vals) == 0:
                 head_page_elems.append(page_elems[key])
 
@@ -482,12 +494,14 @@ class ReadingOrderPredictor:
             print(f"{l}\t{str(elem)}")
         """
 
-        self.heads = []
+        state.heads = []
         for item in head_page_elems:
-            self.heads.append(self.h2i_map[item.cid])
+            state.heads.append(state.h2i_map[item.cid])
 
-    def _sort_ud_maps(self, provs: List[PageElement]):
-        for ind_i, vals in self.dn_map.items():
+    def _sort_ud_maps(
+        self, provs: List[PageElement], state: _ReadingOrderPredictorState
+    ) -> None:
+        for ind_i, vals in state.dn_map.items():
 
             child_provs: List[PageElement] = []
             for ind_j in vals:
@@ -496,33 +510,37 @@ class ReadingOrderPredictor:
             # this will invoke __lt__ from PageElements
             child_provs = sorted(child_provs)
 
-            self.dn_map[ind_i] = []
+            state.dn_map[ind_i] = []
             for child in child_provs:
-                self.dn_map[ind_i].append(self.h2i_map[child.cid])
+                state.dn_map[ind_i].append(state.h2i_map[child.cid])
 
-    def _find_order(self, provs: List[PageElement]):
+    def _find_order(
+        self, provs: List[PageElement], state: _ReadingOrderPredictorState
+    ) -> List[int]:
         order: List[int] = []
 
         visited: List[bool] = [False for _ in provs]
 
-        for j in self.heads:
+        for j in state.heads:
 
             if not visited[j]:
 
                 order.append(j)
                 visited[j] = True
-                self._depth_first_search_downwards(j, order, visited)
+                self._depth_first_search_downwards(j, order, visited, state)
 
         if len(order) != len(provs):
             _log.error("something went wrong")
 
         return order
 
-    def _depth_first_search_upwards(self, j: int, visited: List[bool]):
+    def _depth_first_search_upwards(
+        self, j: int, visited: List[bool], state: _ReadingOrderPredictorState
+    ) -> int:
         """depth_first_search_upwards without recursion"""
         k = j
         while True:
-            inds: List[int] = self.up_map[k]
+            inds: List[int] = state.up_map[k]
             found_not_visited = False
             for ind in inds:
                 if not visited[ind]:
@@ -535,12 +553,16 @@ class ReadingOrderPredictor:
                 return k
 
     def _depth_first_search_downwards(
-        self, j: int, order: List[int], visited: List[bool]
-    ):
+        self,
+        j: int,
+        order: List[int],
+        visited: List[bool],
+        state: _ReadingOrderPredictorState,
+    ) -> None:
         """depth_first_search_downwards without recursion"""
         # The outermost list is the main stack.
         # Each list element is a tuple containint the list of the indices to be checked and an offset
-        stack: List[Tuple[List[int], int]] = [(self.dn_map[j], 0)]
+        stack: List[Tuple[List[int], int]] = [(state.dn_map[j], 0)]
 
         while stack:
             inds, offset = stack[-1]
@@ -548,13 +570,13 @@ class ReadingOrderPredictor:
             found_non_visited = False
             if offset < len(inds):
                 for new_offset, i in enumerate(inds[offset:]):
-                    k: int = self._depth_first_search_upwards(i, visited)
+                    k: int = self._depth_first_search_upwards(i, visited, state)
 
                     if not visited[k]:
                         order.append(k)
                         visited[k] = True
                         stack[-1] = (inds, new_offset + 1)
-                        stack.append((self.dn_map[k], 0))
+                        stack.append((state.dn_map[k], 0))
                         found_non_visited = True
                         break
 
@@ -662,7 +684,9 @@ class ReadingOrderPredictor:
             print("to-captions: ", cid_i, ": ", to_item)
         """
 
-        def _remove_overlapping_indexes(mapping):
+        def _remove_overlapping_indexes(
+            mapping: Dict[int, List[int]]
+        ) -> Dict[int, List[int]]:
             used = set()
             result = {}
             for key, values in sorted(mapping.items()):
