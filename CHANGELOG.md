@@ -1,3 +1,9 @@
+## [v3.10.2](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.10.2) - 2025-10-28
+
+### Fix
+
+* ReadingOrderPredictor: Make _predict_page threadsafe ([#137](https://github.com/docling-project/docling-ibm-models/issues/137)) ([`78473fe`](https://github.com/docling-project/docling-ibm-models/commit/78473fe844d6ef2a18e470b1331d3aef10e3d7f5))
+
 ## [v3.10.1](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.10.1) - 2025-10-22
 
 ### Fix
