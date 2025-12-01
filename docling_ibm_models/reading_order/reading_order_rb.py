@@ -112,7 +112,7 @@ class ReadingOrderPredictor:
             page_to_footers[page_no] = self._predict_page(elems)
 
         sorted_elements = []
-        for page_no in page_nos:
+        for page_no in sorted(page_nos):
             sorted_elements.extend(page_to_headers[page_no])
             sorted_elements.extend(page_to_elems[page_no])
             sorted_elements.extend(page_to_footers[page_no])
