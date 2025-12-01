@@ -1,3 +1,9 @@
+## [v3.10.3](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.10.3) - 2025-12-01
+
+### Fix
+
+* Deterministic page sorting in reading-order model ([#141](https://github.com/docling-project/docling-ibm-models/issues/141)) ([`15ff139`](https://github.com/docling-project/docling-ibm-models/commit/15ff13940c1345b936978eafefab659b4d4a3488))
+
 ## [v3.10.2](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.10.2) - 2025-10-28
 
 ### Fix
