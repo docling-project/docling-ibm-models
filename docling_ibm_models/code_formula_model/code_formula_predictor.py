@@ -22,20 +22,19 @@ _log = logging.getLogger(__name__)
 _model_init_lock = threading.Lock()
 
 
-class StopOnString(StoppingCriteria):
-    def __init__(self, tokenizer, stop_string):
-        self.stop_token_ids = tokenizer.encode(stop_string, add_special_tokens=False)
+from transformers import StoppingCriteria
+
+
+class RepeatTokenStoppingCriteria(StoppingCriteria):
+    def __init__(self, repeat_count=100):
+        self.repeat_count = repeat_count
 
     def __call__(self, input_ids, scores, **kwargs):
-        for sequence in input_ids:
-            sequence_list = sequence.tolist()
-            for i in range(len(sequence_list) - len(self.stop_token_ids) + 1):
-                if (
-                    sequence_list[i : i + len(self.stop_token_ids)]
-                    == self.stop_token_ids
-                ):
-                    return True
-        return False
+        if input_ids.shape[-1] < self.repeat_count:
+            return False
+        # Check the last `repeat_count` tokens
+        last_tokens = input_ids[0, -self.repeat_count :]
+        return bool((last_tokens == last_tokens[0]).all())
 
 
 class CodeFormulaPredictor:
@@ -151,31 +150,6 @@ class CodeFormulaPredictor:
 
         return prompt
 
-    def _strip(self, text: str):
-        """
-        Removes any occurrences of the substrings in remove_list from the end of text.
-
-        Parameters
-        ----------
-        text : str
-            The original string.
-
-        Returns
-        -------
-        str
-            The trimmed string.
-        """
-        remove_list = [r"\quad", r"\\", r"\,", " c c c c", " l l l l l"]
-        changed = True
-        while changed:
-            changed = False
-            for substr in remove_list:
-                if text.endswith(substr):
-                    text = text[: -len(substr)]
-                    changed = True
-
-        return text.strip()
-
     @torch.inference_mode()
     def predict(
         self,
@@ -247,15 +221,7 @@ class CodeFormulaPredictor:
         prompt_ids = tokenized["input_ids"]
         attention_mask = tokenized["attention_mask"]
 
-        stopping_criteria = StoppingCriteriaList(
-            [
-                StopOnString(self._tokenizer, r" \quad \quad \quad \quad"),
-                StopOnString(self._tokenizer, r" \\ \\ \\ \\"),
-                StopOnString(self._tokenizer, r" \, \, \, \,"),
-                StopOnString(self._tokenizer, r" c c c c c c c c c c c c c c c c"),
-                StopOnString(self._tokenizer, r" l l l l l l l l l l l l l l l l l"),
-            ]
-        )
+        stopping_criteria = StoppingCriteriaList([RepeatTokenStoppingCriteria()])
 
         if self._device == "cpu":
             output_ids_list = self._model.generate(
@@ -266,25 +232,23 @@ class CodeFormulaPredictor:
                 temperature=temperature,
                 max_new_tokens=4096 - prompt_ids.shape[1],
                 use_cache=True,
-                no_repeat_ngram_size=200,
                 stopping_criteria=stopping_criteria,
             )
         else:
             with torch.autocast(device_type=self._device, dtype=torch.bfloat16):
                 output_ids_list = self._model.generate(
-                    prompt_ids,
+                    input_ids=prompt_ids,
+                    attention_mask=attention_mask,
                     images=images_tensor,
                     do_sample=do_sample,
                     temperature=temperature,
                     max_new_tokens=4096 - prompt_ids.shape[1],
                     use_cache=True,
-                    no_repeat_ngram_size=200,
                     stopping_criteria=stopping_criteria,
                 )
 
         outputs = self._tokenizer.batch_decode(
             output_ids_list[:, prompt_ids.shape[1] :], skip_special_tokens=True
         )
-        outputs = [self._strip(output) for output in outputs]
 
         return outputs
