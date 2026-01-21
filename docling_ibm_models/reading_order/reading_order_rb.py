@@ -384,8 +384,10 @@ class ReadingOrderPredictor:
         # Query R-tree for elements between i and j
         x_min = min(pelem_i.l, pelem_j.l) - 1.0
         x_max = max(pelem_i.r, pelem_j.r) + 1.0
-        y_min = pelem_j.t
-        y_max = pelem_i.b
+        # Ensure y_min <= y_max to avoid RTreeError when elements are very close
+        # or have floating-point precision issues
+        y_min = min(pelem_j.t, pelem_i.b)
+        y_max = max(pelem_j.t, pelem_i.b)
 
         candidates = list(spatial_idx.intersection((x_min, y_min, x_max, y_max)))
 
