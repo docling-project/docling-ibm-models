@@ -22,21 +22,20 @@ classifiers = [
   "Intended Audience :: Science/Research",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
 ]
-requires-python = '>=3.9,<4.0'
+requires-python = '>=3.10,<4.0'
 dependencies = [
   'torch (>=2.2.2,<3.0.0)',
   'torchvision (>=0,<1)',
   'jsonlines (>=3.1.0,<5.0.0)',
   'Pillow (>=10.0.0,<13.0.0)',
   'tqdm (>=4.64.0,<5.0.0)',
-  'huggingface_hub (>=0.23,<1)',
+  'huggingface_hub (>=0.23,<2)',
   'safetensors[torch] (>=0.4.3,<1)',
   'pydantic (>=2.0.0,<3.0.0)',
   'docling-core (>=2.19.0,<3.0.0)',
@@ -92,13 +91,13 @@ include = ["docling_ibm_models*"]
 
 [tool.black]
 line-length = 88
-target-version = ["py39"]
+target-version = ["py310"]
 include = '\.pyi?$'
 
 [tool.isort]
 profile = "black"
 line_length = 88
-py_version = 39
+py_version = 310
 
 [tool.semantic_release]
 # for default values check:
