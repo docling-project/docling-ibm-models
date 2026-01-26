@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Set, Tuple
 
-from docling_core.types.doc.base import BoundingBox, Size
+from docling_core.types.doc.base import BoundingBox, CoordOrigin, Size
 from docling_core.types.doc.document import RefItem
 from docling_core.types.doc.labels import DocItemLabel
 from rtree import index as rtree_index
@@ -228,9 +228,15 @@ class ReadingOrderPredictor:
         """
 
         for i, elem in enumerate(page_elements):
-            page_elements[i] = elem.to_bottom_left_origin(  # type: ignore
-                page_height=page_elements[i].page_size.height
-            )
+            if elem.coord_origin != CoordOrigin.BOTTOMLEFT:
+                # Convert coordinates in place while preserving PageElement type
+                bbox = elem.to_bottom_left_origin(page_height=elem.page_size.height)
+                elem.l = bbox.l
+                elem.r = bbox.r
+                elem.t = bbox.t
+                elem.b = bbox.b
+                elem.coord_origin = CoordOrigin.BOTTOMLEFT
+
         self._init_h2i_map(page_elements, state)
 
         self._init_l2r_map(page_elements, state)
@@ -368,8 +374,10 @@ class ReadingOrderPredictor:
                     while i in state.l2r_map:
                         i = state.l2r_map[i]
 
-                    state.dn_map[i].append(j)
-                    state.up_map[j].append(i)
+                    # Ensure index is valid before accessing maps
+                    if i in state.dn_map and j in state.up_map:
+                        state.dn_map[i].append(j)
+                        state.up_map[j].append(i)
 
     def _has_sequence_interruption(
         self,
