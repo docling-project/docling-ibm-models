@@ -1,0 +1,34 @@
+## Python
+
+# Environments
+.venv
+venv
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+
+# Pytest cache
+.pytest_cache
+
+# Pytest Coverage
+.coverage
+
+## IntelliJ's IDEs
+
+.idea
+
+## Visual Studio Code
+
+.vscode
+
+## macOS
+
+.DS_Store
+
+
+inference/
+inference_results/
+output/
+data/
+/data
+evaluation/
