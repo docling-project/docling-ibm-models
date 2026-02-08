@@ -37,7 +37,7 @@ def init() -> dict:
     }
 
     # Download models from HF
-    artifact_path = snapshot_download(repo_id="ds4sd/CodeFormula", revision="v1.0.1")
+    artifact_path = snapshot_download(repo_id="ds4sd/CodeFormula", revision="v1.0.2")
     
     init["artifact_path"] = artifact_path
 
