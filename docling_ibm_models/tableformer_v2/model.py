@@ -120,6 +120,92 @@ class DepthwiseSeparableBlock(nn.Module):
 
 
 # =============================================================================
+# Feature Pyramid Network (FPN)
+# =============================================================================
+
+
+class SimpleFPN(nn.Module):
+    r"""
+    Simple Feature Pyramid Network to fuse multi-scale features from EfficientNet.
+
+    EfficientNetV2-S feature map sizes at 448x448 input:
+    - Stage 2: 112x112, 48 channels  (fine details: grid lines, small text)
+    - Stage 4: 28x28, 128 channels   (medium structures)
+    - Final:   14x14, 1280 channels  (after conv head)
+
+    This FPN fuses stages 2, 4, and final to capture multi-scale information.
+    """
+
+    def __init__(self, out_channels: int = 1280):
+        super().__init__()
+        # EfficientNetV2-S actual channel sizes: idx2=48, idx4=128, final=1280
+        self.in_channels = [48, 128, 1280]  # stages 2, 4, final
+
+        # Lateral connections (1x1 conv to match channels)
+        self.lateral_conv_s2 = nn.Conv2d(48, out_channels, kernel_size=1)
+        self.lateral_conv_s4 = nn.Conv2d(128, out_channels, kernel_size=1)
+        # Final already has out_channels
+
+        # Smooth convolutions after upsampling
+        self.smooth_s2 = nn.Sequential(
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(out_channels),
+            nn.GELU(),
+        )
+        self.smooth_s4 = nn.Sequential(
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(out_channels),
+            nn.GELU(),
+        )
+
+        # Final fusion
+        self.fusion = nn.Sequential(
+            nn.Conv2d(out_channels * 3, out_channels, kernel_size=1),
+            nn.BatchNorm2d(out_channels),
+            nn.GELU(),
+        )
+
+    def forward(
+        self, feat_s2: torch.Tensor, feat_s4: torch.Tensor, feat_final: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Fuse multi-scale features.
+
+        Args:
+            feat_s2: (B, 48, H/4, W/4) - stage 2 features
+            feat_s4: (B, 160, H/16, W/16) - stage 4 features
+            feat_final: (B, 1280, H/32, W/32) - final features
+
+        Returns:
+            fused: (B, 1280, H/32, W/32) - fused features at final resolution
+        """
+        target_size = feat_final.shape[2:]  # (H/32, W/32)
+
+        # Lateral connections
+        p2 = self.lateral_conv_s2(feat_s2)
+        p4 = self.lateral_conv_s4(feat_s4)
+        p_final = feat_final
+
+        # Resize all to final resolution
+        p2 = nn.functional.interpolate(
+            p2, size=target_size, mode="bilinear", align_corners=False
+        )
+        p4 = nn.functional.interpolate(
+            p4, size=target_size, mode="bilinear", align_corners=False
+        )
+
+        # Smooth
+        p2 = self.smooth_s2(p2)
+        p4 = self.smooth_s4(p4)
+
+        # Concatenate and fuse
+        fused = torch.cat([p2, p4, p_final], dim=1)
+        fused = self.fusion(fused)
+
+        return fused
+
+
+# =============================================================================
 # Transformer Decoder Components
 # =============================================================================
 
@@ -443,6 +529,7 @@ class TableFormerV2Config(PretrainedConfig):
         vocab_size: int = 13,
         conv_mixer_expansion: float = 1.0,
         data_cells: Optional[List[int]] = None,
+        use_fpn: bool = False,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -453,6 +540,7 @@ class TableFormerV2Config(PretrainedConfig):
         self.vocab_size = vocab_size
         self.conv_mixer_expansion = conv_mixer_expansion
         self.data_cells = data_cells or []
+        self.use_fpn = use_fpn
 
 
 # =============================================================================
@@ -488,6 +576,11 @@ class TableFormerV2(PreTrainedModel, GenerationMixin):
             1280, expansion=config.conv_mixer_expansion
         )
         self.feature_to_embedding = nn.Linear(1280, config.embed_dim)
+
+        # Optional FPN for multi-scale features
+        self.use_fpn = getattr(config, "use_fpn", False)
+        if self.use_fpn:
+            self.fpn = SimpleFPN(out_channels=1280)
 
         # embeddings
         self.input_embedding = nn.Embedding(config.vocab_size, config.embed_dim)
@@ -541,9 +634,32 @@ class TableFormerV2(PreTrainedModel, GenerationMixin):
         if prof_enabled:
             AggProfiler().begin("model_encoder", prof_enabled)
 
-        features = self.feature_extractor.features(images)
-        features = self.se_module(features)
-        features = self.conv_mixer(features)
+        if self.use_fpn:
+            # Extract multi-scale features for FPN
+            # EfficientNetV2-S stages: 0-1 (stem), 2, 3, 4, 5, 6, 7 (head)
+            x = images
+            feat_s2 = None
+            feat_s4 = None
+
+            for idx, layer in enumerate(self.feature_extractor.features):
+                x = layer(x)
+                if idx == 2:  # Stage 2: 48 channels
+                    feat_s2 = x
+                elif idx == 4:  # Stage 4: 160 channels
+                    feat_s4 = x
+
+            feat_final = x  # Final: 1280 channels
+
+            # Fuse with FPN
+            features = self.fpn(feat_s2, feat_s4, feat_final)
+            features = self.se_module(features)
+            features = self.conv_mixer(features)
+        else:
+            # Original single-scale path
+            features = self.feature_extractor.features(images)
+            features = self.se_module(features)
+            features = self.conv_mixer(features)
+
         B, C, H, W = features.shape
         features = features.permute(0, 2, 3, 1).contiguous().view(B, H * W, C)
         encoded = self.feature_to_embedding(features)
