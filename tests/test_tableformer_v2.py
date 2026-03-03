@@ -13,8 +13,10 @@ import torchvision.transforms as transforms
 from docling_ibm_models.tableformer_v2 import TableFormerV2
 from docling_ibm_models.tableformer.utils.app_profiler import AggProfiler
 
+TABLEFORMER_V2_REPO_ID = "docling-project/TableFormerV2"
+TABLEFORMER_V2_REVISION = "v0.1.0"
 
-def load_tokenizer(path: str):
+def load_tokenizer(path: str, revision: str | None = None):
     """Load tokenizer from local path or HuggingFace repo."""
     import os
     from tokenizers import Tokenizer
@@ -36,7 +38,7 @@ def load_tokenizer(path: str):
     else:
         # Try loading from HuggingFace repo using AutoTokenizer
         try:
-            tokenizer = AutoTokenizer.from_pretrained(path)
+            tokenizer = AutoTokenizer.from_pretrained(path, revision=revision)
             # Set special tokens if not already set
             if tokenizer.bos_token is None:
                 tokenizer.bos_token = "<start>"
@@ -83,10 +85,14 @@ def init() -> dict:
     init["test_data"] = test_data
 
     # Download model and tokenizer from HuggingFace Hub
-    artifact_path = snapshot_download(repo_id="docling-project/TableFormerV2")
+    artifact_path = snapshot_download(
+        repo_id=TABLEFORMER_V2_REPO_ID,
+        revision=TABLEFORMER_V2_REVISION,
+    )
 
     # Use local checkpoint with tokenizer files
-    init["artifact_path"] = "docling-project/TableFormerV2"
+    init["artifact_path"] = artifact_path
+    init["artifact_revision"] = TABLEFORMER_V2_REVISION
 
     return init
 
@@ -98,7 +104,9 @@ def test_tableformer_v2_model_loading(init: dict):
     device = "cpu"
 
     # Load the model
-    model = TableFormerV2.from_pretrained(init["artifact_path"])
+    model = TableFormerV2.from_pretrained(
+        init["artifact_path"], revision=init["artifact_revision"]
+    )
     model = model.to(device)
     model.eval()
 
@@ -121,7 +129,7 @@ def test_tableformer_v2_tokenizer_loading(init: dict):
     r"""
     Test that the tokenizer loads correctly
     """
-    tokenizer = load_tokenizer(init["artifact_path"])
+    tokenizer = load_tokenizer(init["artifact_path"], revision=init["artifact_revision"])
 
     # Check tokenizer attributes
     assert tokenizer.bos_token_id is not None, "Missing bos_token_id"
@@ -141,7 +149,9 @@ def test_tableformer_v2_image_encoding(init: dict):
     """
     device = "cpu"
 
-    model = TableFormerV2.from_pretrained(init["artifact_path"])
+    model = TableFormerV2.from_pretrained(
+        init["artifact_path"], revision=init["artifact_revision"]
+    )
     model = model.to(device)
     model.eval()
 
@@ -181,8 +191,10 @@ def test_tableformer_v2_forward_pass(init: dict):
     """
     device = "cpu"
 
-    model = TableFormerV2.from_pretrained(init["artifact_path"])
-    tokenizer = load_tokenizer(init["artifact_path"])
+    model = TableFormerV2.from_pretrained(
+        init["artifact_path"], revision=init["artifact_revision"]
+    )
+    tokenizer = load_tokenizer(init["artifact_path"], revision=init["artifact_revision"])
     model = model.to(device)
     model.eval()
 
@@ -231,8 +243,10 @@ def test_tableformer_v2_predict(init: dict):
     # Initialize profiler (cycles started per-table for fair comparison with V1)
     profiler = AggProfiler()
 
-    model = TableFormerV2.from_pretrained(init["artifact_path"])
-    tokenizer = load_tokenizer(init["artifact_path"])
+    model = TableFormerV2.from_pretrained(
+        init["artifact_path"], revision=init["artifact_revision"]
+    )
+    tokenizer = load_tokenizer(init["artifact_path"], revision=init["artifact_revision"])
     model = model.to(device)
     model.eval()
 
@@ -352,8 +366,10 @@ def test_tableformer_v2_numpy_input(init: dict):
     """
     device = "cpu"
 
-    model = TableFormerV2.from_pretrained(init["artifact_path"])
-    tokenizer = load_tokenizer(init["artifact_path"])
+    model = TableFormerV2.from_pretrained(
+        init["artifact_path"], revision=init["artifact_revision"]
+    )
+    tokenizer = load_tokenizer(init["artifact_path"], revision=init["artifact_revision"])
     model = model.to(device)
     model.eval()
 
@@ -403,8 +419,10 @@ def test_tableformer_v2_batch_inference(init: dict):
         print(f"CUDA Version: {torch.version.cuda}")
         print(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.2f} GB")
 
-    model = TableFormerV2.from_pretrained(init["artifact_path"])
-    tokenizer = load_tokenizer(init["artifact_path"])
+    model = TableFormerV2.from_pretrained(
+        init["artifact_path"], revision=init["artifact_revision"]
+    )
+    tokenizer = load_tokenizer(init["artifact_path"], revision=init["artifact_revision"])
     model = model.to(device)
     model.eval()
 
@@ -493,8 +511,10 @@ def test_tableformer_v2_unsupported_input(init: dict):
     """
     device = "cpu"
 
-    model = TableFormerV2.from_pretrained(init["artifact_path"])
-    tokenizer = load_tokenizer(init["artifact_path"])
+    model = TableFormerV2.from_pretrained(
+        init["artifact_path"], revision=init["artifact_revision"]
+    )
+    tokenizer = load_tokenizer(init["artifact_path"], revision=init["artifact_revision"])
     model = model.to(device)
     model.eval()
 
