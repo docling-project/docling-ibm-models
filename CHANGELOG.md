@@ -1,3 +1,9 @@
+## [v3.11.0](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.11.0) - 2026-01-23
+
+### Feature
+
+* Drop python 3.9 ([#144](https://github.com/docling-project/docling-ibm-models/issues/144)) ([`d27b0f1`](https://github.com/docling-project/docling-ibm-models/commit/d27b0f1a57da6521cfaec0df06106de70dc8b626))
+
 ## [v3.10.3](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.10.3) - 2025-12-01
 
 ### Fix
