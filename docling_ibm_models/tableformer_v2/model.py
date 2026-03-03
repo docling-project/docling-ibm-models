@@ -1,7 +1,3 @@
-#
-# Copyright IBM Corp. 2024 - 2024
-# SPDX-License-Identifier: MIT
-#
 r"""
 TableFormerV2:
 This module provides a self-contained implementation of the TableFormerV2
@@ -14,20 +10,15 @@ Architecture overview:
 - Decoder: Cache-aware Transformer decoder with cross-attention to image features
 - Bbox head: Multi-layer attention decoder for cell bounding box prediction
 """
+
 import logging
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, cast
+from typing import List, Optional, Tuple
 
 import torch
 import torch.nn as nn
 from torchvision.models import efficientnet_v2_s
-from transformers import (
-    AutoConfig,
-    AutoModel,
-    GenerationMixin,
-    PretrainedConfig,
-    PreTrainedModel,
-)
+from transformers import AutoConfig, AutoModel, PretrainedConfig, PreTrainedModel
 from transformers.modeling_outputs import ModelOutput
 
 _log = logging.getLogger(__name__)
@@ -548,7 +539,7 @@ class TableFormerV2Config(PretrainedConfig):
 # =============================================================================
 
 
-class TableFormerV2(PreTrainedModel, GenerationMixin):
+class TableFormerV2(PreTrainedModel):
     r"""
     TableFormerV2: CPU-optimized model for table structure recognition (inference only).
 
@@ -564,7 +555,7 @@ class TableFormerV2(PreTrainedModel, GenerationMixin):
         Model configuration
     """
 
-    config_class = TableFormerV2Config
+    config_class = TableFormerV2Config  # type: ignore[assignment]
 
     def __init__(self, config: TableFormerV2Config):
         super().__init__(config)

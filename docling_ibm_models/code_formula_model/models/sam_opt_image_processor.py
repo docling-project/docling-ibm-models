@@ -1,7 +1,3 @@
-#
-# Copyright IBM Corp. 2024 - 2024
-# SPDX-License-Identifier: MIT
-#
 from PIL import Image
 from torchvision.transforms import functional as F
 from transformers import AutoImageProcessor
