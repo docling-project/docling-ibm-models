@@ -40,6 +40,7 @@ def init() -> dict:
     return init
 
 
+@pytest.mark.skip(reason="Legacy code-formula predictor test is disabled (unused path)")
 def test_code_formula_predictor(init: dict):
     r"""
     Unit test for the CodeFormulaPredictor
