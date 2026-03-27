@@ -18,7 +18,13 @@ from typing import List, Optional, Tuple
 import torch
 import torch.nn as nn
 from torchvision.models import efficientnet_v2_s
-from transformers import AutoConfig, AutoModel, GenerationMixin, PretrainedConfig, PreTrainedModel
+from transformers import (
+    AutoConfig,
+    AutoModel,
+    GenerationMixin,
+    PretrainedConfig,
+    PreTrainedModel,
+)
 from transformers.modeling_outputs import ModelOutput
 
 _log = logging.getLogger(__name__)
@@ -781,7 +787,7 @@ class TableFormerV2(PreTrainedModel, GenerationMixin):
             past_key_values=present_kv,
         )
 
-    def prepare_inputs_for_generation(
+    def prepare_inputs_for_generation(  # type: ignore[override]
         self,
         input_ids: torch.Tensor,
         past: Optional[Tuple] = None,
@@ -797,7 +803,7 @@ class TableFormerV2(PreTrainedModel, GenerationMixin):
             "use_cache": True,
         }
 
-    def generate(
+    def generate(  # type: ignore[override]
         self,
         images: torch.Tensor,
         tokenizer,
