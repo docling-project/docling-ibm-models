@@ -18,7 +18,7 @@ from typing import List, Optional, Tuple
 import torch
 import torch.nn as nn
 from torchvision.models import efficientnet_v2_s
-from transformers import AutoConfig, AutoModel, PretrainedConfig, PreTrainedModel
+from transformers import AutoConfig, AutoModel, GenerationMixin, PretrainedConfig, PreTrainedModel
 from transformers.modeling_outputs import ModelOutput
 
 _log = logging.getLogger(__name__)
@@ -539,7 +539,7 @@ class TableFormerV2Config(PretrainedConfig):
 # =============================================================================
 
 
-class TableFormerV2(PreTrainedModel):
+class TableFormerV2(PreTrainedModel, GenerationMixin):
     r"""
     TableFormerV2: CPU-optimized model for table structure recognition (inference only).
 
@@ -590,6 +590,8 @@ class TableFormerV2(PreTrainedModel):
         self.bbox_head = BboxHead(config.embed_dim, config.num_heads)
 
         self.data_cells = config.data_cells
+
+        self.post_init()
 
     def _is_profiling_enabled(self) -> bool:
         r"""
