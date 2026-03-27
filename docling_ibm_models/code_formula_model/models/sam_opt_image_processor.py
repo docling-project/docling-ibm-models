@@ -1,10 +1,9 @@
 from PIL import Image
 from torchvision.transforms import functional as F
-from transformers import AutoImageProcessor
-from transformers.image_processing_utils import ImageProcessingMixin
+from transformers import AutoImageProcessor, BaseImageProcessor
 
 
-class SamOptImageProcessor(ImageProcessingMixin):
+class SamOptImageProcessor(BaseImageProcessor):
 
     def __init__(self, size=(1024, 1024), mean=None, std=None, **kwargs):
         super().__init__(**kwargs)
