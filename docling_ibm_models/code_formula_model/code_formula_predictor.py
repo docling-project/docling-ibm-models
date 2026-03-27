@@ -254,7 +254,7 @@ class CodeFormulaPredictor:
         )
 
         if self._device == "cpu":
-            output_ids_list = self._model.generate(
+            output_ids_list = self._model.generate(  # type: ignore[misc]
                 input_ids=prompt_ids,
                 attention_mask=attention_mask,
                 images=images_tensor,
@@ -267,7 +267,7 @@ class CodeFormulaPredictor:
             )
         else:
             with torch.autocast(device_type=self._device, dtype=torch.bfloat16):
-                output_ids_list = self._model.generate(
+                output_ids_list = self._model.generate(  # type: ignore[misc]
                     prompt_ids,
                     images=images_tensor,
                     do_sample=do_sample,
