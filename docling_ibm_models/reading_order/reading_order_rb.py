@@ -183,7 +183,9 @@ class ReadingOrderPredictor:
             if elem.label in [DocItemLabel.TEXT]:
 
                 ind_p1 = ind + 1
-                while ind_p1 < len(sorted_elements) and sorted_elements[ind_p1] in [
+                while ind_p1 < len(sorted_elements) and sorted_elements[
+                    ind_p1
+                ].label in [
                     DocItemLabel.PAGE_HEADER,
                     DocItemLabel.PAGE_FOOTER,
                     DocItemLabel.TABLE,
@@ -197,7 +199,7 @@ class ReadingOrderPredictor:
                     ind_p1 < len(sorted_elements)
                     and sorted_elements[ind_p1].label == elem.label
                     and (
-                        elem.page_no != sorted_elements[ind_p1].label
+                        elem.page_no != sorted_elements[ind_p1].page_no
                         or elem.is_strictly_left_of(sorted_elements[ind_p1])
                     )
                 ):

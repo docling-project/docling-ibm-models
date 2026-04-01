@@ -248,7 +248,94 @@ def test_readingorder():
     print("score(footnotes): ", mean_ft_score)
 
 
-"""    
+def test_predict_merges_same_page_same_column_no_merge():
+    """Two TEXT elements on the same page in the same column (not strictly
+    left-of each other) should NOT be merged, even when their text matches
+    the merge regex patterns.
+
+    Regression test: a typo compared page_no to label instead of page_no,
+    making the cross-page check always True and bypassing the
+    is_strictly_left_of guard.
+    """
+    from docling_core.types.doc.base import CoordOrigin, Size
+    from docling_core.types.doc.labels import DocItemLabel
+
+    page_size = Size(width=612, height=792)
+
+    # elem0 text ends with a lowercase letter (matches merge regex pattern 1)
+    # elem1 text starts with a lowercase letter (matches merge regex pattern 2)
+    # Same x-range => is_strictly_left_of returns False
+    # Same page => should NOT merge
+    elem0 = PageElement(
+        cid=0,
+        text="this is a text fragment that ends with a word like hello,",
+        page_no=1, page_size=page_size, label=DocItemLabel.TEXT,
+        l=100, r=500, b=400, t=450,
+        coord_origin=CoordOrigin.BOTTOMLEFT,
+    )
+    elem1 = PageElement(
+        cid=1,
+        text="continued text that starts lowercase here.",
+        page_no=1, page_size=page_size, label=DocItemLabel.TEXT,
+        l=100, r=500, b=350, t=400,
+        coord_origin=CoordOrigin.BOTTOMLEFT,
+    )
+
+    assert not elem0.is_strictly_left_of(elem1), "precondition: same column"
+    assert elem0.page_no == elem1.page_no, "precondition: same page"
+
+    romodel = ReadingOrderPredictor()
+    merges = romodel.predict_merges([elem0, elem1])
+
+    assert merges == {}, (
+        f"Same-page, same-column TEXT elements should not be merged, got {merges}"
+    )
+
+
+def test_predict_merges_skips_non_text_elements():
+    """Two mergeable TEXT elements separated by a CAPTION should still be
+    merged because the skip-loop jumps over non-text elements.
+
+    Regression test: the skip-loop compared a PageElement object to
+    DocItemLabel enums instead of comparing .label, so the loop body
+    never executed and merges across intervening non-text elements were missed.
+    """
+    from docling_core.types.doc.base import CoordOrigin, Size
+    from docling_core.types.doc.labels import DocItemLabel
+
+    page_size = Size(width=612, height=792)
+
+    elem0 = PageElement(
+        cid=0,
+        text="this is a text fragment that ends with a word like hello,",
+        page_no=1, page_size=page_size, label=DocItemLabel.TEXT,
+        l=100, r=500, b=400, t=450,
+        coord_origin=CoordOrigin.BOTTOMLEFT,
+    )
+    elem1 = PageElement(
+        cid=1,
+        text="Figure 1: some caption",
+        page_no=1, page_size=page_size, label=DocItemLabel.CAPTION,
+        l=100, r=500, b=350, t=400,
+        coord_origin=CoordOrigin.BOTTOMLEFT,
+    )
+    elem2 = PageElement(
+        cid=2,
+        text="continued text that starts lowercase here.",
+        page_no=2, page_size=page_size, label=DocItemLabel.TEXT,
+        l=100, r=500, b=700, t=750,
+        coord_origin=CoordOrigin.BOTTOMLEFT,
+    )
+
+    romodel = ReadingOrderPredictor()
+    merges = romodel.predict_merges([elem0, elem1, elem2])
+
+    assert merges == {0: [2]}, (
+        f"Skip-loop should jump over CAPTION to find mergeable TEXT, got {merges}"
+    )
+
+
+"""
 def test_readingorder_multipage():
 
     filename = Path("<json with page-elements>")
