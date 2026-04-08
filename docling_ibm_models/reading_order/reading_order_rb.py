@@ -196,7 +196,10 @@ class ReadingOrderPredictor:
 
                 while True:
                     ind_p1 = check_ind + 1
-                    while ind_p1 < len(sorted_elements) and sorted_elements[ind_p1].label in skip_labels:
+                    while (
+                        ind_p1 < len(sorted_elements)
+                        and sorted_elements[ind_p1].label in skip_labels
+                    ):
                         ind_p1 += 1
 
                     if (
@@ -207,8 +210,12 @@ class ReadingOrderPredictor:
                             or elem.is_strictly_left_of(sorted_elements[ind_p1])
                         )
                     ):
-                        m1 = re.fullmatch(r".+([a-z,\-])(\s*)", sorted_elements[check_ind].text)
-                        m2 = re.fullmatch(r"(\s*[a-z])(.+)", sorted_elements[ind_p1].text)
+                        m1 = re.fullmatch(
+                            r".+([a-z,\-])(\s*)", sorted_elements[check_ind].text
+                        )
+                        m2 = re.fullmatch(
+                            r"(\s*[a-z])(.+)", sorted_elements[ind_p1].text
+                        )
 
                         if m1 and m2:
                             merge_list.append(sorted_elements[ind_p1].cid)
@@ -694,7 +701,7 @@ class ReadingOrderPredictor:
         """
 
         def _remove_overlapping_indexes(
-            mapping: Dict[int, List[int]]
+            mapping: Dict[int, List[int]],
         ) -> Dict[int, List[int]]:
             used = set()
             result = {}

@@ -433,7 +433,7 @@ class TFPredictor:
         # initialize the dimensions of the image to be resized and
         # grab the image size
         dim = None
-        (h, w) = image.shape[:2]
+        h, w = image.shape[:2]
         sf = 1.0
         # if both the width and height are None, then return the
         # original image
