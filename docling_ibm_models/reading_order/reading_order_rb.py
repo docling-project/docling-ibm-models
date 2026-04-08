@@ -203,7 +203,9 @@ class ReadingOrderPredictor:
                 ):
 
                     m1 = re.fullmatch(r".+([a-z,\-\u00AD])(\s*)", elem.text)
-                    m2 = re.fullmatch(r"(\s*[a-zA-Z\u00C0-\u024F])(.+)", sorted_elements[ind_p1].text)
+                    m2 = re.fullmatch(
+                        r"(\s*[a-zA-Z\u00C0-\u024F])(.+)", sorted_elements[ind_p1].text
+                    )
 
                     if m1 and m2:
                         merges[elem.cid] = [sorted_elements[ind_p1].cid]
@@ -681,7 +683,7 @@ class ReadingOrderPredictor:
         """
 
         def _remove_overlapping_indexes(
-            mapping: Dict[int, List[int]]
+            mapping: Dict[int, List[int]],
         ) -> Dict[int, List[int]]:
             used = set()
             result = {}
