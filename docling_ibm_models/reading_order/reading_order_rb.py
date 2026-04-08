@@ -183,7 +183,9 @@ class ReadingOrderPredictor:
             if elem.label in [DocItemLabel.TEXT]:
 
                 ind_p1 = ind + 1
-                while ind_p1 < len(sorted_elements) and sorted_elements[ind_p1].label in [
+                while ind_p1 < len(sorted_elements) and sorted_elements[
+                    ind_p1
+                ].label in [
                     DocItemLabel.PAGE_HEADER,
                     DocItemLabel.PAGE_FOOTER,
                     DocItemLabel.TABLE,
@@ -681,7 +683,7 @@ class ReadingOrderPredictor:
         """
 
         def _remove_overlapping_indexes(
-            mapping: Dict[int, List[int]]
+            mapping: Dict[int, List[int]],
         ) -> Dict[int, List[int]]:
             used = set()
             result = {}
