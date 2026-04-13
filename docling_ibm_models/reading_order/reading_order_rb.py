@@ -206,7 +206,7 @@ class ReadingOrderPredictor:
                         ind_p1 < len(sorted_elements)
                         and sorted_elements[ind_p1].label == elem.label
                         and (
-                            elem.page_no != sorted_elements[ind_p1].label
+                            elem.page_no != sorted_elements[ind_p1].page_no
                             or elem.is_strictly_left_of(sorted_elements[ind_p1])
                         )
                     ):
