@@ -254,7 +254,9 @@ class BaseModel(ABC):
                     "Loading model checkpoint file: {}".format(checkpoint_file)
                 )
                 saved_model = torch.load(
-                    checkpoint_file, map_location=self._device, weights_only=False
+                    checkpoint_file,
+                    map_location=self._device,
+                    weights_only=True,
                 )
                 return saved_model, checkpoint_file
             except RuntimeError:
