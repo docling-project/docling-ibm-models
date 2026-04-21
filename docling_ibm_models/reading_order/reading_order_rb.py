@@ -174,6 +174,15 @@ class ReadingOrderPredictor:
 
         merges: Dict[int, List[int]] = {}
 
+        skip_labels = [
+            DocItemLabel.PAGE_HEADER,
+            DocItemLabel.PAGE_FOOTER,
+            DocItemLabel.TABLE,
+            DocItemLabel.PICTURE,
+            DocItemLabel.CAPTION,
+            DocItemLabel.FOOTNOTE,
+        ]
+
         curr_ind = -1
         for ind, elem in enumerate(sorted_elements):
 
@@ -182,34 +191,44 @@ class ReadingOrderPredictor:
 
             if elem.label in [DocItemLabel.TEXT]:
 
-                ind_p1 = ind + 1
-                while ind_p1 < len(sorted_elements) and sorted_elements[ind_p1] in [
-                    DocItemLabel.PAGE_HEADER,
-                    DocItemLabel.PAGE_FOOTER,
-                    DocItemLabel.TABLE,
-                    DocItemLabel.PICTURE,
-                    DocItemLabel.CAPTION,
-                    DocItemLabel.FOOTNOTE,
-                ]:
-                    ind_p1 += 1
+                merge_list: List[int] = []
+                check_ind = ind
 
-                if (
-                    ind_p1 < len(sorted_elements)
-                    and sorted_elements[ind_p1].label == elem.label
-                    and (
-                        elem.page_no != sorted_elements[ind_p1].label
-                        or elem.is_strictly_left_of(sorted_elements[ind_p1])
-                    )
-                ):
+                while True:
+                    ind_p1 = check_ind + 1
+                    while (
+                        ind_p1 < len(sorted_elements)
+                        and sorted_elements[ind_p1].label in skip_labels
+                    ):
+                        ind_p1 += 1
 
-                    m1 = re.fullmatch(r".+([a-z,\-\u00AD])(\s*)", elem.text)
-                    m2 = re.fullmatch(
-                        r"(\s*[a-zA-Z\u00C0-\u024F])(.+)", sorted_elements[ind_p1].text
-                    )
+                    if (
+                        ind_p1 < len(sorted_elements)
+                        and sorted_elements[ind_p1].label == elem.label
+                        and (
+                            elem.page_no != sorted_elements[ind_p1].page_no
+                            or elem.is_strictly_left_of(sorted_elements[ind_p1])
+                        )
+                    ):
+                        m1 = re.fullmatch(
+                            r".+([a-z,\-\u00AD])(\s*)", sorted_elements[check_ind].text
+                        )
+                        m2 = re.fullmatch(
+                            r"(\s*[a-zA-Z\u00C0-\u024F])(.+)",
+                            sorted_elements[ind_p1].text,
+                        )
 
-                    if m1 and m2:
-                        merges[elem.cid] = [sorted_elements[ind_p1].cid]
-                        curr_ind = ind_p1
+                        if m1 and m2:
+                            merge_list.append(sorted_elements[ind_p1].cid)
+                            curr_ind = ind_p1
+                            check_ind = ind_p1
+                        else:
+                            break
+                    else:
+                        break
+
+                if merge_list:
+                    merges[elem.cid] = merge_list
 
         return merges
 
