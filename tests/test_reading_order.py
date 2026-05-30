@@ -247,6 +247,39 @@ def test_readingorder():
     print("  score(caption): ", mean_cp_score)
     print("score(footnotes): ", mean_ft_score)
 
+def test_caption_not_orphaned_in_two_column_figure():
+    """A caption above the right column of a same-row pair is read in place, not last."""
+    from docling_core.types.doc.base import CoordOrigin, Size
+    from docling_core.types.doc.labels import DocItemLabel
+
+    page_size = Size(width=600, height=800)
+
+    def elem(cid, label, l, r, b, t, text=""):
+        return PageElement(
+            cid=cid,
+            text=text,
+            page_no=1,
+            page_size=page_size,
+            label=label,
+            l=l,
+            r=r,
+            b=b,
+            t=t,
+            coord_origin=CoordOrigin.BOTTOMLEFT,
+        )
+    # picture (left) + caption (above the right column only); two same-row body columns below 
+    elements = [
+        elem(0, DocItemLabel.PICTURE, 60, 270, 400, 690),
+        elem(1, DocItemLabel.CAPTION, 340, 480, 300, 360, "Figure 1. Example"),
+        elem(2, DocItemLabel.TEXT, 60, 270, 200, 290, "left column body"),
+        elem(3, DocItemLabel.TEXT, 280, 494, 190, 290, "right column body text"),
+    ]
+
+    order = [e.cid for e in ReadingOrderPredictor().predict_reading_order(page_elements=elements)]
+
+    assert order.index(1) < order.index(3), (
+        f"caption (cid 1) should be read before the body columns, got {order}"
+    )
 
 """    
 def test_readingorder_multipage():
