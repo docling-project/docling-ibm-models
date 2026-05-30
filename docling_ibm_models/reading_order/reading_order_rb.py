@@ -320,12 +320,11 @@ class ReadingOrderPredictor:
         state.l2r_map = {}
         state.r2l_map = {}
 
-        # this currently leads to errors ... might be necessary in the future ...
         for i, pelem_i in enumerate(page_elems):
             for j, pelem_j in enumerate(page_elems):
 
                 if (
-                    False  # pelem_i.follows_maintext_order(pelem_j)
+                    pelem_i.follows_maintext_order(pelem_j)
                     and pelem_i.is_strictly_left_of(pelem_j)
                     and pelem_i.overlaps_vertically_with_iou(pelem_j, 0.8)
                 ):
