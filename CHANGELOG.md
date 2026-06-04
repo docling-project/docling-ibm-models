@@ -1,3 +1,13 @@
+## [v3.13.3](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.13.3) - 2026-06-04
+
+### Fix
+
+* Pin transformers<5.9.0 to solve MPS issue ([#164](https://github.com/docling-project/docling-ibm-models/issues/164)) ([`1483008`](https://github.com/docling-project/docling-ibm-models/commit/1483008421c097ba12029333cb1c15ec1a488805))
+
+### Documentation
+
+* **security:** Document security processes ([#160](https://github.com/docling-project/docling-ibm-models/issues/160)) ([`cddcfae`](https://github.com/docling-project/docling-ibm-models/commit/cddcfaea7a5f0b54101b6dfbc678d058d81ad8cc))
+
 ## [v3.13.2](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.13.2) - 2026-04-23
 
 ### Fix
