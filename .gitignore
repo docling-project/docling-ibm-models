@@ -27,6 +27,9 @@ viz/
 *.swo
 *.bak
 
+# PyCharm
+.idea/
+
 # Environments
 .env
 .venv

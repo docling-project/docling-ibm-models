@@ -11,7 +11,9 @@ import random
 
 from docling_ibm_models.reading_order.reading_order_rb import PageElement, ReadingOrderPredictor
 
+from docling_core.types.doc.base import Size
 from docling_core.types.doc.document import DoclingDocument, DocItem, TextItem, ContentLayer
+from docling_core.types.doc.labels import DocItemLabel
 
 # Configure logging
 logging.basicConfig(
@@ -248,7 +250,73 @@ def test_readingorder():
     print("score(footnotes): ", mean_ft_score)
 
 
-"""    
+# ---------------------------------------------------------------------------
+# Regression tests for caption <-> graphic pairing in
+# ReadingOrderPredictor._find_to_captions.
+#
+# These pin down two bugs that were fixed:
+#   * a caption sandwiched between graphics on both sides was silently dropped;
+#   * a one-sided caption greedily claimed an entire run of graphics, orphaning
+#     a neighbouring caption.
+#
+# For a genuinely ambiguous (both-sided) caption the pairing prefers the nearest
+# graphic by reading order, breaking ties towards the *preceding* graphic.
+# ---------------------------------------------------------------------------
+
+_DUMMY_PAGE_SIZE = Size(width=100.0, height=100.0)
+
+
+def _graphic(cid: int) -> PageElement:
+    return PageElement(
+        cid=cid, page_no=0, page_size=_DUMMY_PAGE_SIZE,
+        label=DocItemLabel.PICTURE, l=0.0, r=10.0, t=10.0, b=0.0,
+    )
+
+
+def _caption(cid: int) -> PageElement:
+    return PageElement(
+        cid=cid, page_no=0, page_size=_DUMMY_PAGE_SIZE,
+        label=DocItemLabel.CAPTION, l=0.0, r=10.0, t=10.0, b=0.0,
+    )
+
+
+def test_single_ambiguous_caption_is_assigned():
+    # [G0, C1, G2]: the only caption has graphics on both sides. It must still be
+    # paired with a graphic (tie broken towards the preceding graphic G0).
+    elements = [_graphic(0), _caption(1), _graphic(2)]
+
+    result = ReadingOrderPredictor()._find_to_captions(elements)
+
+    assert result == {0: [1]}
+
+
+def test_all_ambiguous_captions_are_assigned():
+    # [G0, C1, G2, G3, C4, G5]: both captions are ambiguous; each must still be
+    # paired with its nearest graphic (ties broken towards the preceding one).
+    elements = [
+        _graphic(0), _caption(1), _graphic(2),
+        _graphic(3), _caption(4), _graphic(5),
+    ]
+
+    result = ReadingOrderPredictor()._find_to_captions(elements)
+
+    assert result == {0: [1], 3: [4]}
+
+
+def test_one_sided_caption_does_not_orphan_middle_caption():
+    # [C0, G1, G2, C3, G4, C5]: C0 must take only its nearest graphic (G1), so
+    # the middle caption C3 keeps G2 instead of being orphaned.
+    elements = [
+        _caption(0), _graphic(1), _graphic(2),
+        _caption(3), _graphic(4), _caption(5),
+    ]
+
+    result = ReadingOrderPredictor()._find_to_captions(elements)
+
+    assert result == {1: [0], 2: [3], 4: [5]}
+
+
+"""
 def test_readingorder_multipage():
 
     filename = Path("<json with page-elements>")
