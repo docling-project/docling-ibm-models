@@ -255,12 +255,12 @@ def test_readingorder():
 # ReadingOrderPredictor._find_to_captions.
 #
 # These pin down two bugs that were fixed:
-#   * a caption sandwiched between graphics on both sides was silently dropped;
-#   * a one-sided caption greedily claimed an entire run of graphics, orphaning
-#     a neighbouring caption.
+# - a caption sandwiched between graphics on both sides was silently dropped;
+# - a one-sided caption greedily claimed an entire run of graphics, orphaning 
+#   a neighbouring caption.
 #
-# For a genuinely ambiguous (both-sided) caption the pairing prefers the nearest
-# graphic by reading order, breaking ties towards the *preceding* graphic.
+# For a truly ambiguous (both-sided) caption, the pairing prefers the nearest
+# graphic by document order, breaking ties towards the *preceding* graphic.
 # ---------------------------------------------------------------------------
 
 _DUMMY_PAGE_SIZE = Size(width=100.0, height=100.0)
