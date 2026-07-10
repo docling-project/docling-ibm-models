@@ -23,7 +23,13 @@ class SamOptImageProcessor(BaseImageProcessor):
         return image
 
 
-AutoImageProcessor.register(
-    config_class="SamOptImageProcessor",
-    slow_image_processor_class=SamOptImageProcessor,
-)
+try:
+    AutoImageProcessor.register(
+        config_class="SamOptImageProcessor",
+        slow_image_processor_class=SamOptImageProcessor,
+    )
+except AttributeError:
+    # transformers >=5.13 reads config_class.__module__ unconditionally, which breaks
+    # for our string config_class. SamOptImageProcessor is always loaded directly via
+    # from_pretrained, not through AutoImageProcessor, so skipping is safe.
+    pass
