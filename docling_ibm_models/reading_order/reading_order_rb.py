@@ -3,7 +3,6 @@ import logging
 import re
 from collections import defaultdict
 from dataclasses import dataclass, field
-from itertools import pairwise
 from typing import Dict, List, Set, Tuple
 
 from docling_core.types.doc.base import BoundingBox, Size
@@ -614,19 +613,38 @@ class ReadingOrderPredictor:
         # original tie-break behavior.
         page_elements = sorted(page_elements, key=lambda e: e.cid)
 
-        # candidates are exactly adjacent caption–graphic pairs, in document order.
-        pairings: List[Tuple[int, int]] = []  # (graphic_cid, caption_cid)
-        for left, right in pairwise(page_elements):
-            if left.label == DocItemLabel.CAPTION and right.label in graphic_labels:
-                pairings.append((right.cid, left.cid))  # caption, then its graphic
-            if left.label in graphic_labels and right.label == DocItemLabel.CAPTION:
-                pairings.append((left.cid, right.cid))  # graphic, then its caption
+        # For every caption, walk outward over the run of consecutive graphic-labeled
+        # elements in BOTH directions and record each graphic it could caption,
+        # tagged with distance. Scanning the whole run — not just the single adjacent
+        # element — is what lets a caption reach its graphic across an intervening
+        # graphic (e.g. a table preceding the picture that a caption belongs to).
+        # candidate = (distance, following, graphic_cid, caption_cid)
+        candidates: List[Tuple[int, int, int, int]] = []
+        for ind, element in enumerate(page_elements):
+            if element.label != DocItemLabel.CAPTION:
+                continue
+            for step, following in ((-1, 0), (1, 1)):  # backward=preceding, forward=following
+                probe = ind + step
+                distance = 1
+                while (
+                    0 <= probe < len(page_elements)
+                    and page_elements[probe].label in graphic_labels
+                ):
+                    candidates.append(
+                        (distance, following, page_elements[probe].cid, element.cid)
+                    )
+                    probe += step
+                    distance += 1
 
-        # Hand out graphics in doc order, one per caption.
+        # Assign one caption per graphic and one graphic per caption. Resolve
+        # contention for the same caption by: the nearest graphic wins, then a
+        # preceding graphic beats a following one. This is label-agnostic — a
+        # picture and a table are treated identically; the nearer graphic wins.
+        candidates.sort()
         to_captions: Dict[int, List[int]] = {}
         matched_graphics: Set[int] = set()
         matched_captions: Set[int] = set()
-        for graphic_cid, caption_cid in pairings:
+        for _distance, _following, graphic_cid, caption_cid in candidates:
             if graphic_cid in matched_graphics or caption_cid in matched_captions:
                 continue
             to_captions[graphic_cid] = [caption_cid]
