@@ -607,9 +607,10 @@ class ReadingOrderPredictor:
 
         graphic_labels = {DocItemLabel.TABLE, DocItemLabel.PICTURE, DocItemLabel.CODE}
 
-        # Sort by cid (doc order) so a caption stays adjacent to its graphic.
-        # Reading order can push them apart; doc order keeps them together.
-        page_elements = sorted(page_elements, key=lambda e: e.cid)
+        # page_elements arrives in reading order, which already places each caption
+        # next to its graphic. Keep that order: cids are assigned in parse order, so
+        # sorting by cid can drop unrelated elements (a table, a page number, a
+        # page_footer) between a caption and the graphic it belongs to.
 
         # For each caption, scan the run of consecutive graphics in both directions
         # and record every graphic it could pair with, tagged by distance. Scanning

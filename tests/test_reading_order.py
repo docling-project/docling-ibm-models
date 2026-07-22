@@ -289,6 +289,13 @@ def _caption(cid: int) -> PageElement:
     )
 
 
+def _el(cid: int, label: DocItemLabel) -> PageElement:
+    return PageElement(
+        cid=cid, page_no=0, page_size=_DUMMY_PAGE_SIZE,
+        label=label, l=0.0, r=10.0, t=10.0, b=0.0,
+    )
+
+
 def test_single_ambiguous_caption_is_assigned():
     # [G0, C1, G2]: the only caption has graphics on both sides. It must still be
     # paired with a graphic (tie broken towards the preceding graphic G0).
@@ -353,6 +360,58 @@ def test_dense_cluster_pairs_every_picture_with_its_caption():
     result = ReadingOrderPredictor()._find_to_captions(elements)
 
     assert result == {0: [1], 2: [3], 5: [6]}
+
+
+# ---------------------------------------------------------------------------
+# Reproductions captured from a real conversion of 2203.01017v2.pdf. The lists
+# below are the exact page_elements _find_to_captions receives (in reading
+# order, with real cids/labels). In reading order the predictor already places
+# each picture next to its caption, but cids are assigned in parse order, so a
+# caption and its graphic can be far apart in cid order with unrelated elements
+# (a table, a page number, a page_footer) sitting between them.
+# ---------------------------------------------------------------------------
+
+SH = DocItemLabel.SECTION_HEADER
+TX = DocItemLabel.TEXT
+PF = DocItemLabel.PAGE_FOOTER
+
+
+def test_page1_caption_pairs_with_adjacent_picture_not_earlier_table():
+    # 2203.01017v2 page 1: the picture (cid 8) sits right before its caption
+    # (cid 12) in reading order, but in cid order two tables and a page-number
+    # text land between them. The caption belongs to the picture (Figure 1).
+    elements = [
+        _el(7, SH),
+        _table(11),
+        _el(9, TX),
+        _table(10),
+        _graphic(8),
+        _caption(12),
+        _el(13, TX),
+    ]
+
+    result = ReadingOrderPredictor()._find_to_captions(elements)
+
+    assert result == {8: [12]}
+
+
+def test_page13_cluster_pairs_each_picture_with_its_caption():
+    # 2203.01017v2 page 13: three figures, each picture immediately followed by
+    # its caption in reading order (Fig 8/9/10), with a table and a page_footer
+    # mixed into the run. In cid order all captions precede all pictures with a
+    # page_footer between the two blocks, so cid-order pairing finds nothing.
+    elements = [
+        _el(205, TX), _el(206, TX), _el(207, TX),
+        _graphic(213), _caption(208),   # Figure 8
+        _graphic(212), _caption(209),   # Figure 9
+        _table(215),
+        _graphic(214), _caption(210),   # Figure 10
+        _el(211, PF),
+    ]
+
+    result = ReadingOrderPredictor()._find_to_captions(elements)
+
+    assert result == {213: [208], 212: [209], 214: [210]}
 
 
 """
