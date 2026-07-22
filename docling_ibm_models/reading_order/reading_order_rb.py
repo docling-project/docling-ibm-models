@@ -607,17 +607,14 @@ class ReadingOrderPredictor:
 
         graphic_labels = {DocItemLabel.TABLE, DocItemLabel.PICTURE, DocItemLabel.CODE}
 
-        # Match on cid (doc order), not reading order.
-        # A caption sits beside its graphic in a document, but the reading order can
-        # push it further away than the doc order. cid keeps them adjacent and matches
-        # original tie-break behavior.
+        # Sort by cid (doc order) so a caption stays adjacent to its graphic.
+        # Reading order can push them apart; doc order keeps them together.
         page_elements = sorted(page_elements, key=lambda e: e.cid)
 
-        # For every caption, walk outward over the run of consecutive graphic-labeled
-        # elements in BOTH directions and record each graphic it could caption,
-        # tagged with distance. Scanning the whole run — not just the single adjacent
-        # element — is what lets a caption reach its graphic across an intervening
-        # graphic (e.g. a table preceding the picture that a caption belongs to).
+        # For each caption, scan the run of consecutive graphics in both directions
+        # and record every graphic it could pair with, tagged by distance. Scanning
+        # the whole run lets a caption reach its graphic past an intervening one
+        # (e.g. a table before the picture that owns the caption).
         # candidate = (distance, following, graphic_cid, caption_cid)
         candidates: List[Tuple[int, int, int, int]] = []
         for ind, element in enumerate(page_elements):
@@ -636,10 +633,9 @@ class ReadingOrderPredictor:
                     probe += step
                     distance += 1
 
-        # Assign one caption per graphic and one graphic per caption. Resolve
-        # contention for the same caption by: the nearest graphic wins, then a
-        # preceding graphic beats a following one. This is label-agnostic — a
-        # picture and a table are treated identically; the nearer graphic wins.
+        # Assign at most one caption per graphic and one graphic per caption. The
+        # sort makes the nearest graphic win, with ties going to the preceding one.
+        # Pictures and tables are treated the same way.
         candidates.sort()
         to_captions: Dict[int, List[int]] = {}
         matched_graphics: Set[int] = set()

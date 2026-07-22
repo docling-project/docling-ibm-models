@@ -254,15 +254,15 @@ def test_readingorder():
 # Regression tests for caption <-> graphic pairing in
 # ReadingOrderPredictor._find_to_captions.
 #
-# Pairing is label-agnostic: pictures and tables are treated identically, and
-# the graphic nearest to a caption wins, with ties broken towards the preceding
-# graphic. Every caption that has any adjacent graphic gets paired (captions are
-# never dropped), and each graphic/caption is used at most once.
+# Pairing is label-agnostic: pictures and tables are treated the same way, and
+# the graphic nearest to a caption wins, with ties going to the preceding
+# graphic. Every caption that has an adjacent graphic gets paired, and each
+# graphic and caption is used at most once.
 #
-# The shapes below are distilled from the ground-truth of tests/data/pdf/
-# 2203.01017v2.pdf in the docling repo (its dense figure appendix, pp. 1/13/14),
-# which the pre-fix code mis-paired by handing a picture's caption to a nearer
-# table or by dropping the first caption of a cluster.
+# The shapes below come from the ground-truth of tests/data/pdf/2203.01017v2.pdf
+# in the docling repo (its dense figure appendix, pp. 1/13/14). The pre-fix code
+# mis-paired them: a nearer table could steal a picture's caption, and the first
+# caption of a cluster could get dropped.
 # ---------------------------------------------------------------------------
 
 _DUMMY_PAGE_SIZE = Size(width=100.0, height=100.0)
@@ -325,11 +325,11 @@ def test_one_sided_caption_does_not_orphan_middle_caption():
     assert result == {1: [0], 2: [3], 4: [5]}
 
 
-def test_caption_binds_to_nearest_graphic_not_the_earlier_table():
-    # [T0, P1, C2]: page 1 of 2203.01017v2 ("Figure 1: Picture of a table") — a
-    # table precedes the picture the caption belongs to. The caption must bind to
-    # the nearer picture P1, not the earlier table T0. The pre-fix code handed it
-    # to the table (lower cid / strict adjacency), orphaning the picture.
+def test_caption_binds_to_nearest_graphic():
+    # [T0, P1, C2]: page 1 of 2203.01017v2 ("Figure 1: Picture of a table"). A
+    # table precedes the picture that owns the caption. The caption binds to the
+    # nearer picture P1. The pre-fix code gave it to the table (lower cid), which
+    # left the picture without a caption.
     elements = [_table(0), _graphic(1), _caption(2)]
 
     result = ReadingOrderPredictor()._find_to_captions(elements)
@@ -338,11 +338,11 @@ def test_caption_binds_to_nearest_graphic_not_the_earlier_table():
 
 
 def test_dense_cluster_pairs_every_picture_with_its_caption():
-    # Page 13 of 2203.01017v2: picture/caption pairs bunched together with a table
-    # in the run:  P0 C1 | P2 C3 | T4 | P5 C6  (Figures 8, 9, 10). Every picture
-    # must keep its own caption and the table must take none. The ground truth for
-    # this PDF still carries the old bug here (it drops the first caption, Fig 8);
-    # the fixed behaviour pairs all three — captions are never dropped.
+    # Page 13 of 2203.01017v2: picture/caption pairs bunched with a table in the
+    # run:  P0 C1 | P2 C3 | T4 | P5 C6  (Figures 8, 9, 10). Every picture keeps
+    # its own caption and the table takes none. The ground truth for this PDF
+    # still carries the old bug here, dropping the first caption (Fig 8); the
+    # fixed behaviour pairs all three.
     elements = [
         _graphic(0), _caption(1),
         _graphic(2), _caption(3),
