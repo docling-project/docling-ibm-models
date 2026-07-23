@@ -3,6 +3,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from itertools import takewhile
+from operator import itemgetter
 from typing import Dict, List, Set, Tuple
 
 from docling_core.types.doc.base import BoundingBox, Size
@@ -615,8 +616,8 @@ class ReadingOrderPredictor:
             return indexed[1].label in graphic_labels
 
         # For each caption, collect the graphics reachable in an unbroken run on
-        # either side as (distance, side, graphic_cid, caption_cid) candidates.
-        # side 0 = preceding, 1 = following, so ties prefer the preceding graphic.
+        # either side as (distance, side, graphic_cid, caption_cid) candidates,
+        # appended in reading order. side 0 = preceding, 1 = following.
         candidates: List[Tuple[int, int, int, int]] = []
         for ind, caption in enumerate(page_elements):
             if caption.label != DocItemLabel.CAPTION:
@@ -627,12 +628,16 @@ class ReadingOrderPredictor:
                 for distance, graphic in takewhile(is_graphic, run):
                     candidates.append((distance, side, graphic.cid, caption.cid))
 
-        # Give each caption to its nearest graphic (ties to the preceding side),
-        # using every graphic and caption at most once. Pictures and tables count
-        # the same. to_captions doubles as the "graphic already used" set.
+        # Give each caption to its nearest graphic, preferring the preceding side.
+        # Rank only by (distance, side); the stable sort leaves ties in reading
+        # order, so the incoming order decides them, never the parse-order cids.
+        # Every graphic and caption is used at most once, and pictures and tables
+        # count the same. to_captions doubles as the "graphic already used" set.
         to_captions: Dict[int, List[int]] = {}
         matched_captions: Set[int] = set()
-        for _distance, _side, graphic_cid, caption_cid in sorted(candidates):
+        for _distance, _side, graphic_cid, caption_cid in sorted(
+            candidates, key=itemgetter(0, 1)
+        ):
             if graphic_cid in to_captions or caption_cid in matched_captions:
                 continue
             to_captions[graphic_cid] = [caption_cid]
