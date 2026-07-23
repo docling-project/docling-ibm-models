@@ -1,8 +1,8 @@
 import copy
 import logging
 import re
-from collections import defaultdict
 from dataclasses import dataclass, field
+from itertools import takewhile
 from typing import Dict, List, Set, Tuple
 
 from docling_core.types.doc.base import BoundingBox, Size
@@ -609,43 +609,33 @@ class ReadingOrderPredictor:
 
         # page_elements arrives in reading order, which already places each caption
         # next to its graphic. Keep that order: cids are assigned in parse order, so
-        # sorting by cid can drop unrelated elements (a table, a page number, a
+        # sorting by cid can scatter unrelated elements (a table, a page number, a
         # page_footer) between a caption and the graphic it belongs to.
+        def is_graphic(indexed: Tuple[int, PageElement]) -> bool:
+            return indexed[1].label in graphic_labels
 
-        # For each caption, scan the run of consecutive graphics in both directions
-        # and record every graphic it could pair with, tagged by distance. Scanning
-        # the whole run lets a caption reach its graphic past an intervening one
-        # (e.g. a table before the picture that owns the caption).
-        # candidate = (distance, following, graphic_cid, caption_cid)
+        # For each caption, collect the graphics reachable in an unbroken run on
+        # either side as (distance, side, graphic_cid, caption_cid) candidates.
+        # side 0 = preceding, 1 = following, so ties prefer the preceding graphic.
         candidates: List[Tuple[int, int, int, int]] = []
-        for ind, element in enumerate(page_elements):
-            if element.label != DocItemLabel.CAPTION:
+        for ind, caption in enumerate(page_elements):
+            if caption.label != DocItemLabel.CAPTION:
                 continue
-            for step, following in ((-1, 0), (1, 1)):  # backward=preceding, forward=following
-                probe = ind + step
-                distance = 1
-                while (
-                    0 <= probe < len(page_elements)
-                    and page_elements[probe].label in graphic_labels
-                ):
-                    candidates.append(
-                        (distance, following, page_elements[probe].cid, element.cid)
-                    )
-                    probe += step
-                    distance += 1
+            preceding = enumerate(reversed(page_elements[:ind]), start=1)
+            following = enumerate(page_elements[ind + 1 :], start=1)
+            for side, run in ((0, preceding), (1, following)):
+                for distance, graphic in takewhile(is_graphic, run):
+                    candidates.append((distance, side, graphic.cid, caption.cid))
 
-        # Assign at most one caption per graphic and one graphic per caption. The
-        # sort makes the nearest graphic win, with ties going to the preceding one.
-        # Pictures and tables are treated the same way.
-        candidates.sort()
+        # Give each caption to its nearest graphic (ties to the preceding side),
+        # using every graphic and caption at most once. Pictures and tables count
+        # the same. to_captions doubles as the "graphic already used" set.
         to_captions: Dict[int, List[int]] = {}
-        matched_graphics: Set[int] = set()
         matched_captions: Set[int] = set()
-        for _distance, _following, graphic_cid, caption_cid in candidates:
-            if graphic_cid in matched_graphics or caption_cid in matched_captions:
+        for _distance, _side, graphic_cid, caption_cid in sorted(candidates):
+            if graphic_cid in to_captions or caption_cid in matched_captions:
                 continue
             to_captions[graphic_cid] = [caption_cid]
-            matched_graphics.add(graphic_cid)
             matched_captions.add(caption_cid)
         return to_captions
 
