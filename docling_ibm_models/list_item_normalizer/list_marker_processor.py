@@ -44,8 +44,13 @@ class ListItemMarkerProcessor:
             r"[✓✔✗✘]",  # Checkmark bullets
         ]
 
-        # Numbered markers (ordered lists)
+        # Numbered markers (ordered lists). Compound/hierarchical markers are listed
+        # first: they are the more specific patterns, and matching is first-wins.
         self._numbered_patterns = [
+            r"\d+(?:\.\d+)+\.?",  # 1.1  1.2.3  1.1. (dotted decimal outline)
+            r"\d+\.?[a-zA-Z]\.",  # 9a. 3.a.
+            r"\d+\.?[a-zA-Z]\)",  # 9a) 3.a)
+            r"\(\d+\.?[a-zA-Z]\)",  # (9a) (3.a)
             r"\d+\.",  # 1. 2. 3.
             r"\d+\)",  # 1) 2) 3)
             r"\(\d+\)",  # (1) (2) (3)
