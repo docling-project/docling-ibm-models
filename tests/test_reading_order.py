@@ -267,3 +267,96 @@ def test_readingorder_multipage():
     for true_elem, pred_elem in zip(true_elements, pred_elements):
         print("true: ", str(true_elem), ", pred: ", str(pred_elem))
 """
+
+def test_close_elements_with_floating_point_precision():
+    """
+    Test that the reading order predictor handles elements that are very close
+    together, where floating-point precision could cause y_min > y_max.
+    
+    This reproduces the issue from GitHub issue #140 where:
+    pelem_j.t: 93.79399999999998
+    pelem_i.b: 93.793212890625
+    
+    Without the fix, this would cause an RTreeError because y_min > y_max.
+    """
+    from docling_core.types.doc.base import Size, CoordOrigin
+    from docling_core.types.doc.labels import DocItemLabel
+    
+    # Create two elements that are very close together vertically
+    # Element i is above element j, but their boundaries are very close
+    elem_i = PageElement(
+        cid=0,
+        text="Element I",
+        page_no=0,
+        page_size=Size(width=612, height=792),
+        label=DocItemLabel.TEXT,
+        l=64.34620666503906,
+        r=533.4917602539062,
+        t=80.0,  # top of element i
+        b=93.793212890625,  # bottom of element i (very close to top of j)
+        coord_origin=CoordOrigin.BOTTOMLEFT
+    )
+    
+    elem_j = PageElement(
+        cid=1,
+        text="Element J",
+        page_no=0,
+        page_size=Size(width=612, height=792),
+        label=DocItemLabel.TEXT,
+        l=66.492,
+        r=525.236,
+        t=93.79399999999998,  # top of element j (slightly greater than bottom of i!)
+        b=110.0,  # bottom of element j
+        coord_origin=CoordOrigin.BOTTOMLEFT
+    )
+    
+    # Create a reading order predictor
+    romodel = ReadingOrderPredictor()
+    
+    # This should not raise an RTreeError
+    # Before the fix, this would fail with:
+    # "Coordinates must not have minimums more than maximums"
+    result = romodel.predict_reading_order(page_elements=[elem_i, elem_j])
+    
+    # Verify we got results back
+    assert len(result) == 2
+
+
+def test_identical_boundaries():
+    """
+    Test edge case where two elements have identical vertical boundaries.
+    Regression test for issue #140.
+    """
+    from docling_core.types.doc.base import Size, CoordOrigin
+    from docling_core.types.doc.labels import DocItemLabel
+    
+    elem_i = PageElement(
+        cid=0,
+        text="Element I",
+        page_no=0,
+        page_size=Size(width=612, height=792),
+        label=DocItemLabel.TEXT,
+        l=100.0,
+        r=200.0,
+        t=100.0,
+        b=150.0,
+        coord_origin=CoordOrigin.BOTTOMLEFT
+    )
+    
+    elem_j = PageElement(
+        cid=1,
+        text="Element J",
+        page_no=0,
+        page_size=Size(width=612, height=792),
+        label=DocItemLabel.TEXT,
+        l=250.0,
+        r=350.0,
+        t=100.0,  # Same as elem_i.t
+        b=150.0,  # Same as elem_i.b
+        coord_origin=CoordOrigin.BOTTOMLEFT
+    )
+    
+    romodel = ReadingOrderPredictor()
+    result = romodel.predict_reading_order(page_elements=[elem_i, elem_j])
+    
+    assert len(result) == 2
