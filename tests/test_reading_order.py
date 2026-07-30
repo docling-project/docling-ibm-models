@@ -332,6 +332,17 @@ def test_one_sided_caption_does_not_orphan_middle_caption():
     assert result == {1: [0], 2: [3], 4: [5]}
 
 
+def test_caption_above_each_graphic_pairs_both():
+    # [C0, G1, C2, G3]: a caption above each graphic. Every candidate sits at
+    # distance 1, so the preceding-side tie-break alone would hand G1 to C2 and
+    # orphan both C0 (which has no other candidate) and G3. C2 must give way.
+    elements = [_caption(0), _graphic(1), _caption(2), _graphic(3)]
+
+    result = ReadingOrderPredictor()._find_to_captions(elements)
+
+    assert result == {1: [0], 3: [2]}
+
+
 def test_caption_binds_to_nearest_graphic():
     # [T0, P1, C2]: page 1 of 2203.01017v2 ("Figure 1: Picture of a table"). A
     # table precedes the picture that owns the caption. The caption binds to the

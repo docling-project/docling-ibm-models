@@ -2,8 +2,7 @@ import copy
 import logging
 import re
 from dataclasses import dataclass, field
-from itertools import takewhile
-from operator import itemgetter
+from itertools import takewhile, zip_longest
 from typing import Dict, List, Set, Tuple
 
 from docling_core.types.doc.base import BoundingBox, Size
@@ -58,6 +57,13 @@ class _ReadingOrderPredictorState:
     up_map: Dict[int, List[int]] = field(default_factory=dict)
     dn_map: Dict[int, List[int]] = field(default_factory=dict)
     heads: List[int] = field(default_factory=list)
+
+
+GRAPHIC_LABELS = {DocItemLabel.TABLE, DocItemLabel.PICTURE, DocItemLabel.CODE}
+
+
+def _is_graphic(element: PageElement) -> bool:
+    return element.label in GRAPHIC_LABELS
 
 
 class ReadingOrderPredictor:
@@ -602,47 +608,83 @@ class ReadingOrderPredictor:
             if not found_non_visited:
                 stack.pop()
 
+    @staticmethod
+    def _rank_caption_candidates(
+        page_elements: List[PageElement],
+    ) -> Dict[int, List[int]]:
+        """
+        Map each caption cid to the cids of the graphics it could belong to,
+        nearest first, ties going to the preceding graphic.
+
+        A caption can only reach the graphics in an unbroken run on either side
+        of it; interleaving the two runs, preceding first, yields exactly that
+        ranking. Insertion order keeps the captions in reading order, so the
+        parse-order cids never decide anything.
+        """
+        preferred: Dict[int, List[int]] = {}
+        for ind, caption in enumerate(page_elements):
+            if caption.label != DocItemLabel.CAPTION:
+                continue
+            preceding = takewhile(_is_graphic, reversed(page_elements[:ind]))
+            following = takewhile(_is_graphic, page_elements[ind + 1 :])
+            preferred[caption.cid] = [
+                graphic.cid
+                for pair in zip_longest(preceding, following)
+                for graphic in pair
+                if graphic is not None
+            ]
+        return preferred
+
+    @staticmethod
+    def _match_caption(
+        caption_cid: int,
+        preferred: Dict[int, List[int]],
+        matched: Dict[int, int],
+        seen: Set[int],
+    ) -> Dict[int, int]:
+        """
+        Given the current matching `matched` (graphic cid -> caption cid),
+        return a new matching in which the caption owns one of its graphics,
+        displacing an earlier caption when that one can rehouse itself. Empty
+        if no graphic can be freed up.
+
+        `seen` keeps one displacement chain from revisiting a graphic; pass a
+        fresh set per caption.
+        """
+        for graphic_cid in preferred[caption_cid]:
+            if graphic_cid in seen:
+                continue
+            seen.add(graphic_cid)
+            held_by = matched.get(graphic_cid)
+            if held_by is None:
+                rematched = dict(matched)
+            else:
+                rematched = ReadingOrderPredictor._match_caption(
+                    held_by, preferred, matched, seen
+                )
+                if not rematched:
+                    continue
+            rematched[graphic_cid] = caption_cid
+            return rematched
+        return {}
+
     def _find_to_captions(
         self, page_elements: List[PageElement]
     ) -> Dict[int, List[int]]:
 
-        graphic_labels = {DocItemLabel.TABLE, DocItemLabel.PICTURE, DocItemLabel.CODE}
-
         # page_elements arrives in reading order, which already places each caption
-        # next to its graphic. Keep that order: cids are assigned in parse order, so
-        # sorting by cid can scatter unrelated elements (a table, a page number, a
-        # page_footer) between a caption and the graphic it belongs to.
-        def is_graphic(indexed: Tuple[int, PageElement]) -> bool:
-            return indexed[1].label in graphic_labels
+        # next to its graphic; cids are parse order and would scatter them.
+        preferred = self._rank_caption_candidates(page_elements)
 
-        # For each caption, collect the graphics reachable in an unbroken run on
-        # either side as (distance, side, graphic_cid, caption_cid) candidates,
-        # appended in reading order. side 0 = preceding, 1 = following.
-        candidates: List[Tuple[int, int, int, int]] = []
-        for ind, caption in enumerate(page_elements):
-            if caption.label != DocItemLabel.CAPTION:
-                continue
-            preceding = enumerate(reversed(page_elements[:ind]), start=1)
-            following = enumerate(page_elements[ind + 1 :], start=1)
-            for side, run in ((0, preceding), (1, following)):
-                for distance, graphic in takewhile(is_graphic, run):
-                    candidates.append((distance, side, graphic.cid, caption.cid))
+        # Match by augmenting paths, not best-first: a caption with a second
+        # choice must give way to one that has none, or both end up orphaned.
+        matched: Dict[int, int] = {}
+        for caption_cid in preferred:
+            matched = (
+                self._match_caption(caption_cid, preferred, matched, set()) or matched
+            )
 
-        # Give each caption to its nearest graphic, preferring the preceding side.
-        # Rank only by (distance, side); the stable sort leaves ties in reading
-        # order, so the incoming order decides them, never the parse-order cids.
-        # Every graphic and caption is used at most once, and pictures and tables
-        # count the same. to_captions doubles as the "graphic already used" set.
-        to_captions: Dict[int, List[int]] = {}
-        matched_captions: Set[int] = set()
-        for _distance, _side, graphic_cid, caption_cid in sorted(
-            candidates, key=itemgetter(0, 1)
-        ):
-            if graphic_cid in to_captions or caption_cid in matched_captions:
-                continue
-            to_captions[graphic_cid] = [caption_cid]
-            matched_captions.add(caption_cid)
-        return to_captions
+        return {graphic: [caption] for graphic, caption in matched.items()}
 
     def _find_to_footnotes(
         self, page_elements: List[PageElement]
