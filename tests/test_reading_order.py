@@ -107,7 +107,9 @@ def test_readingorder():
                     from_ref[item.get_ref().cref] = true_elements[-1].cid 
                     
         rand_elements = copy.deepcopy(true_elements)
-        random.shuffle(rand_elements)
+        # Seeded, so that a score close to its threshold cannot flake from one
+        # run to the next on a different shuffle.
+        random.Random(0).shuffle(rand_elements)
 
         """
         print(f"reading {os.path.basename(filename)}")        
