@@ -11,7 +11,9 @@ import random
 
 from docling_ibm_models.reading_order.reading_order_rb import PageElement, ReadingOrderPredictor
 
+from docling_core.types.doc.base import CoordOrigin, Size
 from docling_core.types.doc.document import DoclingDocument, DocItem, TextItem, ContentLayer
+from docling_core.types.doc.labels import DocItemLabel
 
 # Configure logging
 logging.basicConfig(
@@ -105,7 +107,9 @@ def test_readingorder():
                     from_ref[item.get_ref().cref] = true_elements[-1].cid 
                     
         rand_elements = copy.deepcopy(true_elements)
-        random.shuffle(rand_elements)
+        # Seeded, so that a score close to its threshold cannot flake from one
+        # run to the next on a different shuffle.
+        random.Random(0).shuffle(rand_elements)
 
         """
         print(f"reading {os.path.basename(filename)}")        
@@ -248,7 +252,215 @@ def test_readingorder():
     print("score(footnotes): ", mean_ft_score)
 
 
-"""    
+# ---------------------------------------------------------------------------
+# Regression tests for caption <-> graphic pairing in
+# ReadingOrderPredictor._find_to_captions.
+#
+# Pairing is label-agnostic: pictures and tables are treated the same way, and
+# the graphic nearest to a caption wins, with ties going to the preceding
+# graphic. Every caption that has an adjacent graphic gets paired, and each
+# graphic and caption is used at most once.
+#
+# The shapes below come from the ground-truth of tests/data/pdf/2203.01017v2.pdf
+# in the docling repo (its dense figure appendix, pp. 1/13/14). The pre-fix code
+# mis-paired them: a nearer table could steal a picture's caption, and the first
+# caption of a cluster could get dropped.
+# ---------------------------------------------------------------------------
+
+# A letter page, so that the coordinates below and any page-relative threshold
+# mean the same thing they would in a real document.
+_DUMMY_PAGE_SIZE = Size(width=612.0, height=792.0)
+
+
+def _el(cid: int, label: DocItemLabel) -> PageElement:
+    # Every element shares one box, so the pairing rests on the run alone.
+    return PageElement(
+        cid=cid, page_no=0, page_size=_DUMMY_PAGE_SIZE,
+        label=label, l=0.0, r=10.0, t=10.0, b=0.0,
+        coord_origin=CoordOrigin.BOTTOMLEFT,
+    )
+
+
+def _graphic(cid: int) -> PageElement:
+    return _el(cid, DocItemLabel.PICTURE)
+
+
+def _table(cid: int) -> PageElement:
+    return _el(cid, DocItemLabel.TABLE)
+
+
+def _caption(cid: int) -> PageElement:
+    return _el(cid, DocItemLabel.CAPTION)
+
+
+def test_single_ambiguous_caption_is_assigned():
+    # [G0, C1, G2]: the only caption has graphics on both sides. It must still be
+    # paired with a graphic (tie broken towards the preceding graphic G0).
+    elements = [_graphic(0), _caption(1), _graphic(2)]
+
+    result = ReadingOrderPredictor()._find_to_captions(elements)
+
+    assert result == {0: [1]}
+
+
+def test_all_ambiguous_captions_are_assigned():
+    # [G0, C1, G2, G3, C4, G5]: both captions are ambiguous; each must still be
+    # paired with its nearest graphic (ties broken towards the preceding one).
+    elements = [
+        _graphic(0), _caption(1), _graphic(2),
+        _graphic(3), _caption(4), _graphic(5),
+    ]
+
+    result = ReadingOrderPredictor()._find_to_captions(elements)
+
+    assert result == {0: [1], 3: [4]}
+
+
+def test_one_sided_caption_does_not_orphan_middle_caption():
+    # [C0, G1, G2, C3, G4, C5]: C0 must take only its nearest graphic (G1), so
+    # the middle caption C3 keeps G2 instead of being orphaned.
+    elements = [
+        _caption(0), _graphic(1), _graphic(2),
+        _caption(3), _graphic(4), _caption(5),
+    ]
+
+    result = ReadingOrderPredictor()._find_to_captions(elements)
+
+    assert result == {1: [0], 2: [3], 4: [5]}
+
+
+def test_caption_above_each_graphic_pairs_both():
+    # [C0, G1, C2, G3]: a caption above each graphic. Every candidate sits at
+    # distance 1, so the preceding-side tie-break alone would hand G1 to C2 and
+    # orphan both C0 (which has no other candidate) and G3. C2 must give way.
+    elements = [_caption(0), _graphic(1), _caption(2), _graphic(3)]
+
+    result = ReadingOrderPredictor()._find_to_captions(elements)
+
+    assert result == {1: [0], 3: [2]}
+
+
+def test_caption_binds_to_nearest_graphic():
+    # [T0, P1, C2]: page 1 of 2203.01017v2 ("Figure 1: Picture of a table"). A
+    # table precedes the picture that owns the caption. The caption binds to the
+    # nearer picture P1. The pre-fix code gave it to the table (lower cid), which
+    # left the picture without a caption.
+    elements = [_table(0), _graphic(1), _caption(2)]
+
+    result = ReadingOrderPredictor()._find_to_captions(elements)
+
+    assert result == {1: [2]}
+
+
+def test_dense_cluster_pairs_every_picture_with_its_caption():
+    # Page 13 of 2203.01017v2: picture/caption pairs bunched with a table in the
+    # run:  P0 C1 | P2 C3 | T4 | P5 C6  (Figures 8, 9, 10). Every picture keeps
+    # its own caption and the table takes none. The ground truth for this PDF
+    # still carries the old bug here, dropping the first caption (Fig 8); the
+    # fixed behaviour pairs all three.
+    elements = [
+        _graphic(0), _caption(1),
+        _graphic(2), _caption(3),
+        _table(4),
+        _graphic(5), _caption(6),
+    ]
+
+    result = ReadingOrderPredictor()._find_to_captions(elements)
+
+    assert result == {0: [1], 2: [3], 5: [6]}
+
+
+# ---------------------------------------------------------------------------
+# Reproductions captured from a real conversion of 2203.01017v2.pdf. The lists
+# below are the exact page_elements _find_to_captions receives (in reading
+# order, with real cids/labels). In reading order the predictor already places
+# each picture next to its caption, but cids are assigned in parse order, so a
+# caption and its graphic can be far apart in cid order with unrelated elements
+# (a table, a page number, a page_footer) sitting between them.
+# ---------------------------------------------------------------------------
+
+SH = DocItemLabel.SECTION_HEADER
+TX = DocItemLabel.TEXT
+PF = DocItemLabel.PAGE_FOOTER
+
+
+def test_page1_caption_pairs_with_adjacent_picture_not_earlier_table():
+    # 2203.01017v2 page 1: the picture (cid 8) sits right before its caption
+    # (cid 12) in reading order, but in cid order two tables and a page-number
+    # text land between them. The caption belongs to the picture (Figure 1).
+    elements = [
+        _el(7, SH),
+        _table(11),
+        _el(9, TX),
+        _table(10),
+        _graphic(8),
+        _caption(12),
+        _el(13, TX),
+    ]
+
+    result = ReadingOrderPredictor()._find_to_captions(elements)
+
+    assert result == {8: [12]}
+
+
+def test_page13_cluster_pairs_each_picture_with_its_caption():
+    # 2203.01017v2 page 13: three figures, each picture immediately followed by
+    # its caption in reading order (Fig 8/9/10), with a table and a page_footer
+    # mixed into the run. In cid order all captions precede all pictures with a
+    # page_footer between the two blocks, so cid-order pairing finds nothing.
+    elements = [
+        _el(205, TX), _el(206, TX), _el(207, TX),
+        _graphic(213), _caption(208),   # Figure 8
+        _graphic(212), _caption(209),   # Figure 9
+        _table(215),
+        _graphic(214), _caption(210),   # Figure 10
+        _el(211, PF),
+    ]
+
+    result = ReadingOrderPredictor()._find_to_captions(elements)
+
+    assert result == {213: [208], 212: [209], 214: [210]}
+
+
+def _box(
+    cid: int, label: DocItemLabel, b: float, t: float,
+    l: float = 100.0, r: float = 500.0,
+) -> PageElement:
+    # Full-width by default, so only the vertical gap separates it from its
+    # neighbours; pass l/r to place graphics side by side.
+    return _el(cid, label).model_copy(update={"l": l, "r": r, "t": t, "b": b})
+
+
+def test_caption_binds_below_when_the_graphic_below_is_nearer():
+    # Doc 01030000000128, "Figure 13.3. Graph of Projection Estimates": a table
+    # sits 49.7 above the caption, the figure it names 24.9 below. Ranking by
+    # position in the run alone hands it to the table; it belongs to the picture.
+    elements = [
+        _box(0, DocItemLabel.TABLE, 427.2, 738.7),
+        _box(1, DocItemLabel.CAPTION, 353.2, 377.5),
+        _box(2, DocItemLabel.PICTURE, 161.5, 328.3),
+    ]
+
+    result = ReadingOrderPredictor()._find_to_captions(elements)
+
+    assert result == {2: [1]}
+
+
+def test_caption_between_two_pictures_binds_to_the_nearer_one():
+    # Doc 01030000000131, "Figure 17.2. Year-to-year changes in housing prices":
+    # 54.7 below the picture above, 47.9 above the picture below.
+    elements = [
+        _box(0, DocItemLabel.PICTURE, 520.3, 736.9),
+        _box(1, DocItemLabel.CAPTION, 456.8, 465.6),
+        _box(2, DocItemLabel.PICTURE, 197.9, 408.9),
+    ]
+
+    result = ReadingOrderPredictor()._find_to_captions(elements)
+
+    assert result == {2: [1]}
+
+
+"""
 def test_readingorder_multipage():
 
     filename = Path("<json with page-elements>")
