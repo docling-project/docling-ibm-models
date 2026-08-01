@@ -11,7 +11,7 @@ import random
 
 from docling_ibm_models.reading_order.reading_order_rb import PageElement, ReadingOrderPredictor
 
-from docling_core.types.doc.base import Size
+from docling_core.types.doc.base import CoordOrigin, Size
 from docling_core.types.doc.document import DoclingDocument, DocItem, TextItem, ContentLayer
 from docling_core.types.doc.labels import DocItemLabel
 
@@ -267,35 +267,30 @@ def test_readingorder():
 # caption of a cluster could get dropped.
 # ---------------------------------------------------------------------------
 
-_DUMMY_PAGE_SIZE = Size(width=100.0, height=100.0)
-
-
-def _graphic(cid: int) -> PageElement:
-    return PageElement(
-        cid=cid, page_no=0, page_size=_DUMMY_PAGE_SIZE,
-        label=DocItemLabel.PICTURE, l=0.0, r=10.0, t=10.0, b=0.0,
-    )
-
-
-def _table(cid: int) -> PageElement:
-    return PageElement(
-        cid=cid, page_no=0, page_size=_DUMMY_PAGE_SIZE,
-        label=DocItemLabel.TABLE, l=0.0, r=10.0, t=10.0, b=0.0,
-    )
-
-
-def _caption(cid: int) -> PageElement:
-    return PageElement(
-        cid=cid, page_no=0, page_size=_DUMMY_PAGE_SIZE,
-        label=DocItemLabel.CAPTION, l=0.0, r=10.0, t=10.0, b=0.0,
-    )
+# A letter page, so that the coordinates below and any page-relative threshold
+# mean the same thing they would in a real document.
+_DUMMY_PAGE_SIZE = Size(width=612.0, height=792.0)
 
 
 def _el(cid: int, label: DocItemLabel) -> PageElement:
+    # Every element shares one box, so the pairing rests on the run alone.
     return PageElement(
         cid=cid, page_no=0, page_size=_DUMMY_PAGE_SIZE,
         label=label, l=0.0, r=10.0, t=10.0, b=0.0,
+        coord_origin=CoordOrigin.BOTTOMLEFT,
     )
+
+
+def _graphic(cid: int) -> PageElement:
+    return _el(cid, DocItemLabel.PICTURE)
+
+
+def _table(cid: int) -> PageElement:
+    return _el(cid, DocItemLabel.TABLE)
+
+
+def _caption(cid: int) -> PageElement:
+    return _el(cid, DocItemLabel.CAPTION)
 
 
 def test_single_ambiguous_caption_is_assigned():
@@ -425,6 +420,44 @@ def test_page13_cluster_pairs_each_picture_with_its_caption():
     result = ReadingOrderPredictor()._find_to_captions(elements)
 
     assert result == {213: [208], 212: [209], 214: [210]}
+
+
+def _box(
+    cid: int, label: DocItemLabel, b: float, t: float,
+    l: float = 100.0, r: float = 500.0,
+) -> PageElement:
+    # Full-width by default, so only the vertical gap separates it from its
+    # neighbours; pass l/r to place graphics side by side.
+    return _el(cid, label).model_copy(update={"l": l, "r": r, "t": t, "b": b})
+
+
+def test_caption_binds_below_when_the_graphic_below_is_nearer():
+    # Doc 01030000000128, "Figure 13.3. Graph of Projection Estimates": a table
+    # sits 49.7 above the caption, the figure it names 24.9 below. Ranking by
+    # position in the run alone hands it to the table; it belongs to the picture.
+    elements = [
+        _box(0, DocItemLabel.TABLE, 427.2, 738.7),
+        _box(1, DocItemLabel.CAPTION, 353.2, 377.5),
+        _box(2, DocItemLabel.PICTURE, 161.5, 328.3),
+    ]
+
+    result = ReadingOrderPredictor()._find_to_captions(elements)
+
+    assert result == {2: [1]}
+
+
+def test_caption_between_two_pictures_binds_to_the_nearer_one():
+    # Doc 01030000000131, "Figure 17.2. Year-to-year changes in housing prices":
+    # 54.7 below the picture above, 47.9 above the picture below.
+    elements = [
+        _box(0, DocItemLabel.PICTURE, 520.3, 736.9),
+        _box(1, DocItemLabel.CAPTION, 456.8, 465.6),
+        _box(2, DocItemLabel.PICTURE, 197.9, 408.9),
+    ]
+
+    result = ReadingOrderPredictor()._find_to_captions(elements)
+
+    assert result == {2: [1]}
 
 
 """
