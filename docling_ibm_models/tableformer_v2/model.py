@@ -677,6 +677,7 @@ class TableFormerV2(PreTrainedModel, GenerationMixin):
         past_key_values: Optional[Tuple] = None,
         use_cache: Optional[bool] = None,
         return_dict: bool = True,
+        predict_bboxes: bool = True,
     ) -> TableFormerV2Output:
         r"""
         Forward pass for inference.
@@ -697,6 +698,8 @@ class TableFormerV2(PreTrainedModel, GenerationMixin):
             Whether to use KV caching (default: True)
         return_dict : bool
             Whether to return a ModelOutput (default: True)
+        predict_bboxes : bool
+            Whether to predict bounding boxes (default: True)
 
         Returns
         -------
@@ -770,12 +773,14 @@ class TableFormerV2(PreTrainedModel, GenerationMixin):
             else cell_positions.new_empty(0)
         )
 
-        pred_bboxes = self.bbox_head(
-            cell_embeddings,
-            encoder_outputs["last_hidden_state"],
-            cell_batch_indices,
-            spatial_size=encoder_outputs.get("spatial_size", None),
-        )
+        pred_bboxes = None
+        if predict_bboxes:
+            pred_bboxes = self.bbox_head(
+                cell_embeddings,
+                encoder_outputs["last_hidden_state"],
+                cell_batch_indices,
+                spatial_size=encoder_outputs.get("spatial_size", None),
+            )
 
         if not return_dict:
             return (logits, decoded, pred_bboxes, present_kv)  # type: ignore[return-value]
@@ -786,6 +791,52 @@ class TableFormerV2(PreTrainedModel, GenerationMixin):
             predicted_bboxes=pred_bboxes,
             past_key_values=present_kv,
         )
+
+    def forward_bbox(self, input_ids, encoder_outputs, decoder_h):
+        prof_enabled = self._is_profiling_enabled()
+
+        output = TableFormerV2Output(
+            logits=None,
+            hidden_states=None,
+            predicted_bboxes=None,
+            past_key_values=None,
+        )
+
+        # Identify cell positions
+        cell_mask = torch.zeros_like(input_ids, dtype=torch.bool)
+        for cell_id in self.data_cells:
+            cell_mask |= input_ids == cell_id
+
+        cell_positions = torch.nonzero(cell_mask, as_tuple=False)
+        if cell_positions.numel() == 0:
+            return output  # No cells found, return empty output
+
+        cell_embeddings = decoder_h[cell_mask]
+        cell_batch_indices = cell_positions[:, 0]
+
+        if prof_enabled:
+            AggProfiler().begin("model_bbox_decoder", prof_enabled)
+        pred_bboxes = self.bbox_head(
+            cell_embeddings,
+            encoder_outputs["last_hidden_state"],
+            cell_batch_indices,
+            spatial_size=encoder_outputs.get("spatial_size", None),
+        )
+        if prof_enabled:
+            AggProfiler().end("model_bbox_decoder", prof_enabled)
+
+        cell_counts = cell_mask.sum(dim=1)
+        max_cells = int(cell_counts.max().item())
+        batched_bboxes = pred_bboxes.new_zeros(input_ids.size(0), max_cells, 4)
+        offset = 0
+        for batch_index, cell_count in enumerate(cell_counts.tolist()):
+            batched_bboxes[batch_index, :cell_count] = pred_bboxes[
+                offset : offset + cell_count
+            ]
+            offset += cell_count
+
+        output.predicted_bboxes = batched_bboxes
+        return output
 
     def prepare_inputs_for_generation(  # type: ignore[override]
         self,
@@ -849,6 +900,7 @@ class TableFormerV2(PreTrainedModel, GenerationMixin):
             generated_ids = torch.full(
                 (batch_size, 1), tokenizer.bos_token_id, dtype=torch.long, device=device
             )
+            enc_dec_hs = []
             current_input = generated_ids
             past_key_values = None
 
@@ -861,68 +913,37 @@ class TableFormerV2(PreTrainedModel, GenerationMixin):
                     past_key_values=past_key_values,
                     use_cache=True,
                     return_dict=True,
+                    predict_bboxes=False,
                 )
 
                 if outputs.logits is None:
                     raise ValueError("Model forward pass returned None logits")
                 next_token = outputs.logits[:, -1, :].argmax(dim=-1, keepdim=True)
                 generated_ids = torch.cat([generated_ids, next_token], dim=1)
+                enc_dec_hs.append(outputs.hidden_states)
                 past_key_values = outputs.past_key_values
                 current_input = next_token
 
                 if torch.all(next_token == tokenizer.eos_token_id):
                     break
 
-            # Final forward pass to get hidden states for bbox prediction
+            # Final forward pass to get last hidden state
             final_outputs = self.forward(
-                input_ids=generated_ids,
-                attention_mask=torch.ones_like(generated_ids),
+                input_ids=current_input,
+                attention_mask=None,
                 encoder_outputs=encoder_outputs,
-                past_key_values=None,
-                use_cache=False,
+                past_key_values=past_key_values,
+                use_cache=True,
                 return_dict=True,
+                predict_bboxes=False,
             )
-            hidden_states = final_outputs.hidden_states
+            enc_dec_hs.append(final_outputs.hidden_states)
 
-            # Find cell positions and predict bboxes
-            pred_bboxes = None
-            max_cells = 0
-            cell_positions_per_batch = []
-
-            for b in range(batch_size):
-                seq = generated_ids[b]
-                positions = []
-                for pos, tok in enumerate(seq.tolist()):
-                    if tok in self.data_cells:
-                        positions.append(pos)
-                cell_positions_per_batch.append(positions)
-                max_cells = max(max_cells, len(positions))
-
-            if max_cells > 0:
-                pred_bboxes = torch.zeros(batch_size, max_cells, 4, device=device)
-                spatial_size = encoder_outputs.get("spatial_size", None)
-
-                for b in range(batch_size):
-                    positions = cell_positions_per_batch[b]
-                    if positions:
-                        if hidden_states is None:
-                            raise ValueError(
-                                "Model forward pass returned None hidden_states"
-                            )
-                        cell_embs = hidden_states[b, positions, :]
-                        batch_indices = torch.zeros(
-                            len(positions), dtype=torch.long, device=device
-                        )
-                        enc_out = encoder_outputs["last_hidden_state"][b : b + 1]
-
-                        if prof_enabled:
-                            AggProfiler().begin("model_bbox_decoder", prof_enabled)
-                        bboxes = self.bbox_head(
-                            cell_embs, enc_out, batch_indices, spatial_size=spatial_size
-                        )
-                        if prof_enabled:
-                            AggProfiler().end("model_bbox_decoder", prof_enabled)
-                        pred_bboxes[b, : len(bboxes)] = bboxes
+            pred_bboxes = self.forward_bbox(
+                input_ids=generated_ids,
+                encoder_outputs=encoder_outputs,
+                decoder_h=torch.cat(enc_dec_hs, dim=1),
+            ).predicted_bboxes
 
         if prof_enabled:
             AggProfiler().end("predict_total", prof_enabled)
