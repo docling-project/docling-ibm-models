@@ -207,6 +207,68 @@ class SimpleFPN(nn.Module):
 # =============================================================================
 
 
+class CachedMHA:
+    def __init__(self, mha: torch.nn.MultiheadAttention):
+        self.mha = mha
+        E_dim = mha.embed_dim
+        self.num_heads = mha.num_heads
+        self.head_dim = E_dim // mha.num_heads
+
+    def get_view(self, x):
+        # x is (batch_size, seq_len, embed_dim)
+        return x.view(x.size(0), x.size(1), self.num_heads, self.head_dim).transpose(
+            1, 2
+        )
+
+    def __call__(
+        self,
+        x: torch.Tensor,
+        cached_kv: Optional[Tuple[torch.Tensor, torch.Tensor]],
+        attn_mask: Optional[torch.Tensor] = None,
+        key_padding_mask: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        # x is (batch_size, 1, embed_dim)
+        qkv = torch.nn.functional.linear(x, self.mha.in_proj_weight, self.mha.in_proj_bias)
+        q, k, v = qkv.chunk(3, dim=-1)
+
+        # Split into heads
+        q = self.get_view(q)
+        k = self.get_view(k)
+        v = self.get_view(v)
+
+        cached_k, cached_v = cached_kv if cached_kv is not None else (None, None)
+        full_k = torch.cat([cached_k, k], dim=2) if cached_k is not None else k
+        full_v = torch.cat([cached_v, v], dim=2) if cached_v is not None else v
+
+        if key_padding_mask is not None:
+            padding_mask = torch.zeros(
+                x.size(0), 1, 1, full_k.size(2), dtype=q.dtype, device=q.device
+            )
+            padding_mask.masked_fill_(
+                key_padding_mask[:, None, None, :], float("-inf")
+            )
+            attn_mask = (
+                padding_mask if attn_mask is None else attn_mask + padding_mask
+            )
+
+        out = torch.nn.functional.scaled_dot_product_attention(
+            q,
+            full_k,
+            full_v,
+            attn_mask=attn_mask,
+            dropout_p=0.0,
+            is_causal=False,
+        )
+
+        out = (
+            out.transpose(1, 2)
+            .contiguous()
+            .view(out.size(0), out.size(2), self.num_heads * self.head_dim)
+        )
+        out = self.mha.out_proj(out)
+        return out, (full_k, full_v)
+
+
 class CachedTransformerDecoderLayer(nn.Module):
     r"""
     Cache-aware Transformer decoder layer for efficient autoregressive generation.
@@ -228,6 +290,7 @@ class CachedTransformerDecoderLayer(nn.Module):
         self.head_dim = d_model // nhead
 
         self.self_attn = nn.MultiheadAttention(d_model, nhead, batch_first=True)
+        self.cached_self_attn = CachedMHA(self.self_attn)
         self.multihead_attn = nn.MultiheadAttention(d_model, nhead, batch_first=True)
 
         self.linear1 = nn.Linear(d_model, dim_feedforward)
@@ -246,22 +309,15 @@ class CachedTransformerDecoderLayer(nn.Module):
         past_kv: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
         use_cache: bool = False,
     ) -> Tuple[torch.Tensor, Optional[Tuple[torch.Tensor, torch.Tensor]]]:
-        k = v = x
-        if past_kv is not None:
-            past_k, past_v = past_kv
-            k = torch.cat([past_k, k], dim=1)
-            v = torch.cat([past_v, v], dim=1)
 
-        attn_output, _ = self.self_attn(
+        attn_output, past_kv = self.cached_self_attn(
             x,
-            k,
-            v,
+            cached_kv=past_kv,
             attn_mask=attn_mask,
             key_padding_mask=key_padding_mask,
-            need_weights=False,
         )
 
-        present = (k, v) if use_cache else None
+        present = past_kv if use_cache else None
         return attn_output, present
 
     def _ca_block(
@@ -723,7 +779,7 @@ class TableFormerV2(PreTrainedModel, GenerationMixin):
             and len(past_key_values) > 0
             and past_key_values[0] is not None
         ):
-            past_length = past_key_values[0][0].shape[1]
+            past_length = past_key_values[0][0].shape[2]
 
         tgt = self.input_embedding(input_ids) + self._positional_encoding(
             batch_size, seq_len, offset=past_length
