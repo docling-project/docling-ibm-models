@@ -35,6 +35,10 @@ from docling_ibm_models.tableformer.utils.app_profiler import AggProfiler
 # Custom Output Classes
 # =============================================================================
 
+# Let's make a KVCache type hint
+KVCache = Tuple[torch.Tensor, torch.Tensor]
+
+
 
 @dataclass
 class TableFormerV2Output(ModelOutput):
@@ -56,7 +60,7 @@ class TableFormerV2Output(ModelOutput):
     logits: Optional[torch.Tensor] = None
     hidden_states: Optional[torch.Tensor] = None
     predicted_bboxes: Optional[torch.Tensor] = None
-    past_key_values: Optional[Tuple[Tuple[torch.Tensor]]] = None
+    past_key_values: Optional[KVCache] = None
 
 
 # =============================================================================
@@ -257,10 +261,10 @@ class CachedSelfAttention(CachedMHA):
     def __call__(
         self,
         x: torch.Tensor,
-        cached_kv: Optional[Tuple[torch.Tensor, torch.Tensor]],
+        cached_kv: Optional[KVCache],
         attn_mask: Optional[torch.Tensor] = None,
         key_padding_mask: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+    ) -> Tuple[torch.Tensor, KVCache]:
         qkv = torch.nn.functional.linear(
             x, self.mha.in_proj_weight, self.mha.in_proj_bias
         )
@@ -280,10 +284,10 @@ class CachedCrossAttention(CachedMHA):
         self,
         x: torch.Tensor,
         memory: torch.Tensor,
-        cached_kv: Optional[Tuple[torch.Tensor, torch.Tensor]],
+        cached_kv: Optional[KVCache],
         attn_mask: Optional[torch.Tensor] = None,
         key_padding_mask: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+    ) -> Tuple[torch.Tensor, KVCache]:
         embed_dim = self.mha.embed_dim
         q = self.get_view(
             torch.nn.functional.linear(
@@ -344,9 +348,9 @@ class CachedTransformerDecoderLayer(nn.Module):
         x: torch.Tensor,
         attn_mask: Optional[torch.Tensor],
         key_padding_mask: Optional[torch.Tensor],
-        past_kv: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
+        past_kv: Optional[KVCache] = None,
         use_cache: bool = False,
-    ) -> Tuple[torch.Tensor, Optional[Tuple[torch.Tensor, torch.Tensor]]]:
+    ) -> Tuple[torch.Tensor, Optional[KVCache]]:
 
         attn_output, past_kv = self.cached_self_attn(
             x,
@@ -364,9 +368,9 @@ class CachedTransformerDecoderLayer(nn.Module):
         mem: torch.Tensor,
         attn_mask: Optional[torch.Tensor],
         key_padding_mask: Optional[torch.Tensor],
-        past_kv: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
+        past_kv: Optional[KVCache] = None,
         use_cache: bool = False,
-    ) -> Tuple[torch.Tensor, Optional[Tuple[torch.Tensor, torch.Tensor]]]:
+    ) -> Tuple[torch.Tensor, Optional[KVCache]]:
         attn_output, present_kv = self.cached_cross_attn(
             x,
             mem,
@@ -387,8 +391,8 @@ class CachedTransformerDecoderLayer(nn.Module):
         memory_key_padding_mask: Optional[torch.Tensor] = None,
         past_key_value: Optional[
             Tuple[
-                Tuple[torch.Tensor, torch.Tensor],
-                Tuple[torch.Tensor, torch.Tensor],
+                KVCache,
+                KVCache,
             ]
         ] = None,
         use_cache: bool = False,
@@ -396,8 +400,8 @@ class CachedTransformerDecoderLayer(nn.Module):
         torch.Tensor,
         Optional[
             Tuple[
-                Tuple[torch.Tensor, torch.Tensor],
-                Tuple[torch.Tensor, torch.Tensor],
+                KVCache,
+                KVCache,
             ]
         ],
     ]:
@@ -467,8 +471,8 @@ class CachedTransformerDecoder(nn.Module):
         past_key_values: Optional[
             Tuple[
                 Tuple[
-                    Tuple[torch.Tensor, torch.Tensor],
-                    Tuple[torch.Tensor, torch.Tensor],
+                    KVCache,
+                    KVCache,
                 ],
                 ...,
             ]
@@ -479,8 +483,8 @@ class CachedTransformerDecoder(nn.Module):
         Optional[
             Tuple[
                 Tuple[
-                    Tuple[torch.Tensor, torch.Tensor],
-                    Tuple[torch.Tensor, torch.Tensor],
+                    KVCache,
+                    KVCache,
                 ],
                 ...,
             ]
@@ -489,8 +493,8 @@ class CachedTransformerDecoder(nn.Module):
         next_past: Optional[
             List[
                 Tuple[
-                    Tuple[torch.Tensor, torch.Tensor],
-                    Tuple[torch.Tensor, torch.Tensor],
+                    KVCache,
+                    KVCache,
                 ]
             ]
         ] = [] if use_cache else None
