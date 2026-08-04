@@ -1,6 +1,8 @@
 import logging
 import sys
 
+_loggers_by_name_and_level = {}
+
 
 def get_custom_logger(logger_name, level, stream=sys.stdout):
     r"""
@@ -14,6 +16,11 @@ def get_custom_logger(logger_name, level, stream=sys.stdout):
     Outputs:
         logger
     """
+    cache_key = (logger_name, level)
+    cached_logger = _loggers_by_name_and_level.get(cache_key)
+    if cached_logger is not None:
+        return cached_logger
+
     logger = logging.getLogger(logger_name)
     logger.setLevel(level)
 
@@ -26,6 +33,7 @@ def get_custom_logger(logger_name, level, stream=sys.stdout):
         handler.setFormatter(formatter)
         logger.addHandler(handler)
 
+    _loggers_by_name_and_level[cache_key] = logger
     return logger
 
 
