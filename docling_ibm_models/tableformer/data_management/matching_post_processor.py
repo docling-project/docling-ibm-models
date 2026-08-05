@@ -776,6 +776,16 @@ class MatchingPostProcessor:
         new_matches = matches
         new_table_cells = table_cells
 
+        # new_matches aliases matches and grows below, so the orphans have to be
+        # collected before that. A pdf cell only reaches a table cell if it ends
+        # up keyed here; anything left over at the end of step 9 is dropped from
+        # the table for good, and used to be dropped without a trace.
+        orphan_pdf_ids = {
+            str(pdf_cell["id"])
+            for pdf_cell in pdf_cells
+            if str(pdf_cell["id"]) not in matches
+        }
+
         # Identify orphan rows (START)
         orphan_rows = []
         orphan_rows_depth = []
@@ -1095,6 +1105,23 @@ class MatchingPostProcessor:
                 new_matches[str(pdf_cell_id)] = [
                     {"post": confidence, "table_cell_id": new_table_cell_id}
                 ]
+
+        # Step 9 only rescues an orphan that intersects a row band; one that
+        # matches no band at all never enters the loop above and is discarded.
+        # That is a real content loss (its text is in no table cell, and the
+        # layout cluster already claimed it), so say so instead of failing
+        # silently -- callers have no other way to notice.
+        unassigned_pdf_ids = orphan_pdf_ids.difference(new_matches)
+        if unassigned_pdf_ids:
+            self._log().warning(
+                "{} of {} pdf cells matched no row band of the {}x{} grid and "
+                "were dropped from the table".format(
+                    len(unassigned_pdf_ids), len(pdf_cells), tab_rows, tab_cols
+                )
+            )
+            self._log().debug(
+                "Dropped pdf cell ids: {}".format(sorted(unassigned_pdf_ids))
+            )
         return new_matches, new_table_cells, max_cell_id
 
     def _clear_pdf_cells(self, pdf_cells):
