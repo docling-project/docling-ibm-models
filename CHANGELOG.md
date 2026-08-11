@@ -1,3 +1,13 @@
+## [v3.14.0](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.14.0) - 2026-08-11
+
+### Feature
+
+* **pdf:** Recognize compound and hierarchical list-item markers ([#169](https://github.com/docling-project/docling-ibm-models/issues/169)) ([`5787142`](https://github.com/docling-project/docling-ibm-models/commit/5787142002b4063efe30f172dd91fbc7a94b43a6))
+
+### Fix
+
+* **reading-order:** Keep sequence-interruption query rectangle well-formed ([#174](https://github.com/docling-project/docling-ibm-models/issues/174)) ([`b865f71`](https://github.com/docling-project/docling-ibm-models/commit/b865f715282f869108fb32ff68e82b2c09b5dcdb))
+
 ## [v3.13.3](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.13.3) - 2026-06-04
 
 ### Fix
