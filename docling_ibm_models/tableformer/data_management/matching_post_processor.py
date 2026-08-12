@@ -896,6 +896,9 @@ class MatchingPostProcessor:
         orphan_columns_bbox = []
         used_col_pdf_ids = []
         used_col_columnid = []
+        # Cache each column's X-centroid so we can fall back to nearest-column
+        # assignment for orphans that match a row band but no column band.
+        col_centroids: dict[int, float] = {}
 
         for col in range(tab_cols):
             bbox_x1s = []  # y2 > y1
@@ -929,6 +932,10 @@ class MatchingPostProcessor:
                 col_x1 = min(bbox_x1s)
             if len(bbox_x2s) > 0:
                 col_x2 = max(bbox_x2s)
+
+            # Cache centroid for nearest-column fallback (see orphan-rows loop).
+            if col_x1 >= 0 and col_x2 >= 0:
+                col_centroids[col] = (col_x1 + col_x2) / 2
 
             # Find "orphan" cells that intersect the band
             for pdf_cell in pdf_cells:
@@ -1050,51 +1057,84 @@ class MatchingPostProcessor:
                 depth_index = orphan_columns[new_column_id].index(pdf_cell_id)
                 confidence = orphan_columns_depth[new_column_id][depth_index]
                 pdf_bbox = orphan_columns_bbox[new_column_id][depth_index]
-
-                # 1. Find table_cell_id by new_row_id / new_column_id
-                new_table_cell_id = -1
-                tcell = list(
-                    filter(
-                        lambda table_cell: table_cell["row_id"] == new_row_id
-                        and table_cell["column_id"] == new_column_id,
-                        table_cells,
-                    )
+            else:
+                # Row-band match but no column-band match. Without the
+                # following fallback the pdf cell is silently dropped (see
+                # https://github.com/docling-project/docling-ibm-models/issues/28
+                # and the symptom in the parent docling issue tracker:
+                # right-aligned values on tables whose predicted columns are
+                # narrower than the page region disappear from the output).
+                # Snap to the nearest column by X-centroid distance and emit
+                # a WARNING so the recovery is observable.
+                pdf_cell = next(
+                    (p for p in pdf_cells if str(p["id"]) == pdf_cell_id),
+                    None,
+                )
+                if pdf_cell is None or not col_centroids:
+                    # Nothing to attach to; preserve historic behaviour.
+                    continue
+                pdf_bbox = pdf_cell["bbox"]
+                cell_cx = (pdf_bbox[0] + pdf_bbox[2]) / 2
+                new_column_id, min_dist = min(
+                    ((c, abs(cell_cx - cx)) for c, cx in col_centroids.items()),
+                    key=lambda t: t[1],
+                )
+                # confidence < 0 marks "nearest-column fallback" so downstream
+                # consumers can distinguish high-confidence band matches from
+                # snapped fallbacks if they care.
+                confidence = -int(round(min_dist)) - 1
+                self._log().warning(
+                    "Orphan pdf_cell %s recovered to col=%s by nearest-column "
+                    "fallback (row=%s, x=%.1f, dist=%.1f)",
+                    pdf_cell_id,
+                    new_column_id,
+                    new_row_id,
+                    cell_cx,
+                    min_dist,
                 )
 
-                if len(tcell) > 0:
-                    new_table_cell_id = tcell[0]["cell_id"]
-                    self._log().debug(
-                        "reusing table_cell_id: {}".format(new_table_cell_id)
-                    )
+            # 1. Find table_cell_id by new_row_id / new_column_id
+            new_table_cell_id = -1
+            tcell = list(
+                filter(
+                    lambda table_cell: table_cell["row_id"] == new_row_id
+                    and table_cell["column_id"] == new_column_id,
+                    table_cells,
+                )
+            )
 
-                    for i in range(len(new_table_cells)):
-                        if new_table_cells[i]["cell_id"] == new_table_cell_id:
-                            bbox_tmp = self._merge_two_bboxes(
-                                new_table_cells[i]["bbox"], pdf_bbox
-                            )
-                            new_table_cells[i]["bbox"] = bbox_tmp
+            if len(tcell) > 0:
+                new_table_cell_id = tcell[0]["cell_id"]
+                self._log().debug("reusing table_cell_id: {}".format(new_table_cell_id))
 
-                if new_table_cell_id < 0:
-                    max_cell_id += 1
-                    new_table_cell_id = max_cell_id
+                for i in range(len(new_table_cells)):
+                    if new_table_cells[i]["cell_id"] == new_table_cell_id:
+                        bbox_tmp = self._merge_two_bboxes(
+                            new_table_cells[i]["bbox"], pdf_bbox
+                        )
+                        new_table_cells[i]["bbox"] = bbox_tmp
 
-                    new_table_cell = {
-                        "bbox": pdf_bbox,
-                        "cell_id": new_table_cell_id,
-                        "column_id": new_column_id,
-                        "label": "body",
-                        "row_id": new_row_id,
-                        "cell_class": 2,
-                    }
-                    self._log().debug(
-                        "making new table_cell_id: {}".format(new_table_cell_id)
-                    )
-                    new_table_cells.append(new_table_cell)
+            if new_table_cell_id < 0:
+                max_cell_id += 1
+                new_table_cell_id = max_cell_id
 
-                # And then add new match to the new_matches
-                new_matches[str(pdf_cell_id)] = [
-                    {"post": confidence, "table_cell_id": new_table_cell_id}
-                ]
+                new_table_cell = {
+                    "bbox": pdf_bbox,
+                    "cell_id": new_table_cell_id,
+                    "column_id": new_column_id,
+                    "label": "body",
+                    "row_id": new_row_id,
+                    "cell_class": 2,
+                }
+                self._log().debug(
+                    "making new table_cell_id: {}".format(new_table_cell_id)
+                )
+                new_table_cells.append(new_table_cell)
+
+            # And then add new match to the new_matches
+            new_matches[str(pdf_cell_id)] = [
+                {"post": confidence, "table_cell_id": new_table_cell_id}
+            ]
         return new_matches, new_table_cells, max_cell_id
 
     def _clear_pdf_cells(self, pdf_cells):
