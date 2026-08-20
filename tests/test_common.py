@@ -1,7 +1,9 @@
 import json
+import logging
 import tempfile
 
 import docling_ibm_models.tableformer.common as c
+import docling_ibm_models.tableformer.otsl as otsl
 
 
 test_config_a = {
@@ -83,3 +85,19 @@ def test_read_config():
         # Read the tmp file and extract the config
         config = c.read_config(fp.name)
         assert isinstance(config, dict)
+
+
+def test_module_loggers_are_namespaced():
+    r"""
+    Module-level loggers must be named after the module that owns them.
+
+    `get_custom_logger` calls `setLevel` on whatever name it is handed, so a
+    bare name reconfigures the importing application's logger of the same name.
+    """
+    for name in ("common", "consolidate"):
+        assert logging.getLogger(name).level == logging.NOTSET, (
+            f"importing docling_ibm_models set a level on the '{name}' logger"
+        )
+
+    assert c.logger.name == "docling_ibm_models.tableformer.common"
+    assert otsl.logger.name == "docling_ibm_models.tableformer.otsl"
