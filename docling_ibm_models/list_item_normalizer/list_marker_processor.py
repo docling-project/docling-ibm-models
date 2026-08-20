@@ -71,11 +71,15 @@ class ListItemMarkerProcessor:
             re.compile(f"^{pattern}$") for pattern in self._numbered_patterns
         ]
 
+        # re.DOTALL so the content group spans the whole item: page backends emit
+        # newlines inside a single item's text, and without it the text would be
+        # silently cut at the first one.
         self._compiled_bullet_item_patterns = [
-            re.compile(f"^({pattern})" + r"\s(.+)") for pattern in self._bullet_patterns
+            re.compile(f"^({pattern})" + r"\s(.+)", re.DOTALL)
+            for pattern in self._bullet_patterns
         ]
         self._compiled_numbered_item_patterns = [
-            re.compile(f"^({pattern})" + r"\s(.+)")
+            re.compile(f"^({pattern})" + r"\s(.+)", re.DOTALL)
             for pattern in self._numbered_patterns
         ]
 
