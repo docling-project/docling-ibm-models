@@ -65,7 +65,7 @@ def find_intersection(b1, b2):
     The bbox of the intersection or None if there is no intersection
     """
     # Check when the bboxes do NOT intersect
-    if b1[2] < b2[0] or b2[2] < b1[0] or b1[1] > b2[3] or b2[1] > b2[3]:
+    if b1[2] < b2[0] or b2[2] < b1[0] or b1[1] > b2[3] or b2[1] > b1[3]:
         return None
 
     i_bbox = [
