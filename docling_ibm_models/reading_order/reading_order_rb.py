@@ -404,6 +404,13 @@ class ReadingOrderPredictor:
         y_min = pelem_j.t
         y_max = pelem_i.b
 
+        # pelem_i is only guaranteed to sit above pelem_j within is_strictly_above's
+        # epsilon, so pelem_i.b can slightly exceed pelem_j.t and leave y_min > y_max.
+        # Keep the query rectangle well-formed (min <= max on every axis); otherwise
+        # rtree raises "Coordinates must not have minimums more than maximums".
+        y_min, y_max = min(y_min, y_max), max(y_min, y_max)
+        x_min, x_max = min(x_min, x_max), max(x_min, x_max)
+
         candidates = list(spatial_idx.intersection((x_min, y_min, x_max, y_max)))
 
         for w in candidates:

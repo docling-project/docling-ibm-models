@@ -1,3 +1,23 @@
+## [v3.14.0](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.14.0) - 2026-08-11
+
+### Feature
+
+* **pdf:** Recognize compound and hierarchical list-item markers ([#169](https://github.com/docling-project/docling-ibm-models/issues/169)) ([`5787142`](https://github.com/docling-project/docling-ibm-models/commit/5787142002b4063efe30f172dd91fbc7a94b43a6))
+
+### Fix
+
+* **reading-order:** Keep sequence-interruption query rectangle well-formed ([#174](https://github.com/docling-project/docling-ibm-models/issues/174)) ([`b865f71`](https://github.com/docling-project/docling-ibm-models/commit/b865f715282f869108fb32ff68e82b2c09b5dcdb))
+
+## [v3.13.3](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.13.3) - 2026-06-04
+
+### Fix
+
+* Pin transformers<5.9.0 to solve MPS issue ([#164](https://github.com/docling-project/docling-ibm-models/issues/164)) ([`1483008`](https://github.com/docling-project/docling-ibm-models/commit/1483008421c097ba12029333cb1c15ec1a488805))
+
+### Documentation
+
+* **security:** Document security processes ([#160](https://github.com/docling-project/docling-ibm-models/issues/160)) ([`cddcfae`](https://github.com/docling-project/docling-ibm-models/commit/cddcfaea7a5f0b54101b6dfbc678d058d81ad8cc))
+
 ## [v3.13.2](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.13.2) - 2026-04-23
 
 ### Fix
