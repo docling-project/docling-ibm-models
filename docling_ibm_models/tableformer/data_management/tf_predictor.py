@@ -217,9 +217,13 @@ class TFPredictor:
     def get_model_type(self):
         return self._model_type
 
+    _logger = None
+
     def _log(self):
-        # Setup a custom logger
-        return s.get_custom_logger(self.__class__.__name__, LOG_LEVEL)
+        # Setup a custom logger, built once per instance
+        if self._logger is None:
+            self._logger = s.get_custom_logger(self.__class__.__name__, LOG_LEVEL)
+        return self._logger
 
     def _deletebbox(self, listofbboxes, index):
         newlist = []

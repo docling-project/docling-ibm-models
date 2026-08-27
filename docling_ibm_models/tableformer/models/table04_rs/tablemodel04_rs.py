@@ -86,9 +86,13 @@ class TableModel04_rs(BaseModel, nn.Module):
             self._dropout,
         ).to(device)
 
+    _logger = None
+
     def _log(self):
-        # Setup a custom logger
-        return s.get_custom_logger(self.__class__.__name__, LOG_LEVEL)
+        # Setup a custom logger, built once per instance
+        if self._logger is None:
+            self._logger = s.get_custom_logger(self.__class__.__name__, LOG_LEVEL)
+        return self._logger
 
     def mergebboxes(self, bbox1, bbox2):
         new_w = (bbox2[0] + bbox2[2] / 2) - (bbox1[0] - bbox1[2] / 2)

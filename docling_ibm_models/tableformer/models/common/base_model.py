@@ -49,9 +49,13 @@ class BaseModel(ABC):
         # NOTICE: Epochs start from 0
         self._epoch_start_ts = {0: time.time()}
 
+    _logger = None
+
     def _log(self):
-        # Setup a custom logger
-        return s.get_custom_logger(self.__class__.__name__, LOG_LEVEL)
+        # Setup a custom logger, built once per instance
+        if self._logger is None:
+            self._logger = s.get_custom_logger(self.__class__.__name__, LOG_LEVEL)
+        return self._logger
 
     @abstractmethod
     def predict(self, img, max_steps, beam_size, return_attention):

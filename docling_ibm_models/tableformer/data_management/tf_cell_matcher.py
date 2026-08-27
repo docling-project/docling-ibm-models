@@ -99,9 +99,13 @@ class CellMatcher:
         self._config = config
         self._iou_thres = config["predict"]["pdf_cell_iou_thres"]
 
+    _logger = None
+
     def _log(self):
-        # Setup a custom logger
-        return s.get_custom_logger(self.__class__.__name__, LOG_LEVEL)
+        # Setup a custom logger, built once per instance
+        if self._logger is None:
+            self._logger = s.get_custom_logger(self.__class__.__name__, LOG_LEVEL)
+        return self._logger
 
     def match_cells(self, iocr_page, table_bbox, prediction):
         r"""
