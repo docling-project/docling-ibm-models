@@ -669,6 +669,9 @@ class TFPredictor:
             "prediction_bboxes_page": [],
         }
 
+        # Initialize TF output
+        tf_output = []
+
         # Table bbox upscaling will scale predicted bboxes too within cell matcher
         scaled_table_bbox = [
             table_bbox[0] / scale_factor,
