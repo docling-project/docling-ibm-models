@@ -320,12 +320,11 @@ class ReadingOrderPredictor:
         state.l2r_map = {}
         state.r2l_map = {}
 
-        # this currently leads to errors ... might be necessary in the future ...
         for i, pelem_i in enumerate(page_elems):
             for j, pelem_j in enumerate(page_elems):
 
                 if (
-                    False  # pelem_i.follows_maintext_order(pelem_j)
+                    pelem_i.follows_maintext_order(pelem_j)
                     and pelem_i.is_strictly_left_of(pelem_j)
                     and pelem_i.overlaps_vertically_with_iou(pelem_j, 0.8)
                 ):
@@ -355,11 +354,12 @@ class ReadingOrderPredictor:
 
         for j, pelem_j in enumerate(page_elems):
             if j in state.r2l_map:
-                i = state.r2l_map[j]
-                state.dn_map[i] = [j]
-                state.up_map[j] = [i]
-                continue
-
+                left_partner = state.r2l_map[j]
+                # Link the same-row left partner, then keep searching for vertical parents
+                if j not in state.dn_map[left_partner]:
+                    state.dn_map[left_partner].append(j)
+                if left_partner not in state.up_map[j]:
+                    state.up_map[j].append(left_partner)
             # Find elements above current that might precede it in reading order
             query_bbox = (pelem_j.l - 0.1, pelem_j.t, pelem_j.r + 0.1, float("inf"))
             candidates = list(spatial_idx.intersection(query_bbox))
