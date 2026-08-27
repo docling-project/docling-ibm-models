@@ -251,6 +251,39 @@ def test_readingorder():
     print("  score(caption): ", mean_cp_score)
     print("score(footnotes): ", mean_ft_score)
 
+def test_caption_not_orphaned_in_two_column_figure():
+    """A caption above the right column of a same-row pair is read in place, not last."""
+    from docling_core.types.doc.base import CoordOrigin, Size
+    from docling_core.types.doc.labels import DocItemLabel
+
+    page_size = Size(width=600, height=800)
+
+    def elem(cid, label, l, r, b, t, text=""):
+        return PageElement(
+            cid=cid,
+            text=text,
+            page_no=1,
+            page_size=page_size,
+            label=label,
+            l=l,
+            r=r,
+            b=b,
+            t=t,
+            coord_origin=CoordOrigin.BOTTOMLEFT,
+        )
+    # picture (left) + caption (above the right column only); two same-row body columns below 
+    elements = [
+        elem(0, DocItemLabel.PICTURE, 60, 270, 400, 690),
+        elem(1, DocItemLabel.CAPTION, 340, 480, 300, 360, "Figure 1. Example"),
+        elem(2, DocItemLabel.TEXT, 60, 270, 200, 290, "left column body"),
+        elem(3, DocItemLabel.TEXT, 280, 494, 190, 290, "right column body text"),
+    ]
+
+    order = [e.cid for e in ReadingOrderPredictor().predict_reading_order(page_elements=elements)]
+
+    assert order.index(1) < order.index(3), (
+        f"caption (cid 1) should be read before the body columns, got {order}"
+    )
 
 # ---------------------------------------------------------------------------
 # Regression tests for caption <-> graphic pairing in
@@ -479,3 +512,60 @@ def test_readingorder_multipage():
     for true_elem, pred_elem in zip(true_elements, pred_elements):
         print("true: ", str(true_elem), ", pred: ", str(pred_elem))
 """
+
+
+def test_reading_order_near_boundary_clusters(monkeypatch):
+    """Regression for #3940: two clusters that almost share a horizontal
+    boundary must not build a malformed rtree query rectangle.
+
+    ``_has_sequence_interruption`` sets ``y_min = pelem_j.t`` and
+    ``y_max = pelem_i.b``. The caller only guarantees ``pelem_i`` sits above
+    ``pelem_j`` within ``is_strictly_above``'s epsilon (1e-3), so ``pelem_i.b``
+    can slightly exceed ``pelem_j.t`` and leave ``y_min > y_max``. Depending on
+    the installed rtree version that either raises
+    ``RTreeError("Coordinates must not have minimums more than maximums")`` or
+    is silently masked, so we enforce rtree's documented contract here to keep
+    the regression deterministic across versions.
+    """
+    from docling_core.types.doc.base import CoordOrigin, Size
+    from docling_core.types.doc.document import DocItemLabel
+    from rtree import index as rtree_index
+
+    from docling_ibm_models.reading_order.reading_order_rb import (
+        _ReadingOrderPredictorState,
+    )
+
+    _orig_intersection = rtree_index.Index.intersection
+
+    def _strict_intersection(self, coordinates, *args, **kwargs):
+        x_min, y_min, x_max, y_max = coordinates
+        assert x_min <= x_max and y_min <= y_max, (
+            f"malformed rtree query rectangle (min > max): {coordinates}"
+        )
+        return _orig_intersection(self, coordinates, *args, **kwargs)
+
+    monkeypatch.setattr(rtree_index.Index, "intersection", _strict_intersection)
+
+    def _mk(cid, l, b, r, t):
+        return PageElement(
+            cid=cid,
+            text="x",
+            page_no=1,
+            page_size=Size(width=600, height=800),
+            label=DocItemLabel.TEXT,
+            l=l,
+            r=r,
+            b=b,
+            t=t,
+            coord_origin=CoordOrigin.BOTTOMLEFT,
+        )
+
+    # pelem_i.b (302.7814...) is "above" pelem_j.t (302.782...) only within eps.
+    page_elems = [
+        _mk(0, l=100.0, b=302.7814025878906, r=200.0, t=350.0),
+        _mk(1, l=100.0, b=250.0, r=200.0, t=302.78204345703125),
+    ]
+
+    state = _ReadingOrderPredictorState()
+    # Must not raise; before the fix this built y_min > y_max.
+    ReadingOrderPredictor()._init_ud_maps(page_elems, state)

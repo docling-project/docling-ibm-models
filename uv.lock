@@ -796,7 +796,7 @@ wheels = [
 
 [[package]]
 name = "docling-ibm-models"
-version = "3.13.3"
+version = "3.14.0"
 source = { editable = "." }
 dependencies = [
     { name = "accelerate" },
@@ -861,7 +861,7 @@ requires-dist = [
     { name = "torch", specifier = ">=2.2.2,<3.0.0" },
     { name = "torchvision", specifier = ">=0,<1" },
     { name = "tqdm", specifier = ">=4.64.0,<5.0.0" },
-    { name = "transformers", marker = "sys_platform != 'darwin'", specifier = ">=4.42.0,!=5.0.*,!=5.1.*,!=5.2.*,!=5.3.*,<6.0.0" },
+    { name = "transformers", marker = "sys_platform != 'darwin'", specifier = ">=4.42.0,!=5.0.*,!=5.1.*,!=5.2.*,!=5.3.*,!=5.13.0,<6.0.0" },
     { name = "transformers", marker = "sys_platform == 'darwin'", specifier = ">=4.42.0,!=5.0.*,!=5.1.*,!=5.2.*,!=5.3.*,<5.9.0" },
 ]
 provides-extras = ["opencv-python-headless", "opencv-python"]

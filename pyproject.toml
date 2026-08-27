@@ -1,6 +1,6 @@
 [project]
 name = "docling-ibm-models"
-version = "3.13.3" # DO NOT EDIT, updated automatically
+version = "3.14.0" # DO NOT EDIT, updated automatically
 description = "This package contains the AI models used by the Docling PDF conversion package"
 license = "MIT"
 keywords = ["docling", "convert", "document", "pdf", "layout model", "segmentation", "table structure", "table former"]
@@ -41,7 +41,9 @@ dependencies = [
   'docling-core (>=2.19.0,<3.0.0)',
   # temporary solution until huggingface/transformers#46159 is resolved
   'transformers (>=4.42.0,<5.9.0,!=5.0.*,!=5.1.*,!=5.2.*,!=5.3.*) ; sys_platform == "darwin"',
-  'transformers (>=4.42.0,<6.0.0,!=5.0.*,!=5.1.*,!=5.2.*,!=5.3.*) ; sys_platform != "darwin"',
+  # transformers 5.13.0 breaks AutoImageProcessor.register() with a string config_class
+  # (fixed upstream in huggingface/transformers#47148, shipped in 5.13.1); see #167
+  'transformers (>=4.42.0,<6.0.0,!=5.0.*,!=5.1.*,!=5.2.*,!=5.3.*,!=5.13.0) ; sys_platform != "darwin"',
   'numpy (>=1.24.4,<3.0.0)',
   "rtree>=1.0.0",
   'accelerate (>=1.2.1,<2.0.0)',

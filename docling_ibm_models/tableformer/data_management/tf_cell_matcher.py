@@ -65,7 +65,7 @@ def find_intersection(b1, b2):
     The bbox of the intersection or None if there is no intersection
     """
     # Check when the bboxes do NOT intersect
-    if b1[2] < b2[0] or b2[2] < b1[0] or b1[1] > b2[3] or b2[1] > b2[3]:
+    if b1[2] < b2[0] or b2[2] < b1[0] or b1[1] > b2[3] or b2[1] > b1[3]:
         return None
 
     i_bbox = [
@@ -99,9 +99,13 @@ class CellMatcher:
         self._config = config
         self._iou_thres = config["predict"]["pdf_cell_iou_thres"]
 
+    _logger = None
+
     def _log(self):
-        # Setup a custom logger
-        return s.get_custom_logger(self.__class__.__name__, LOG_LEVEL)
+        # Setup a custom logger, built once per instance
+        if self._logger is None:
+            self._logger = s.get_custom_logger(self.__class__.__name__, LOG_LEVEL)
+        return self._logger
 
     def match_cells(self, iocr_page, table_bbox, prediction):
         r"""

@@ -347,12 +347,11 @@ class ReadingOrderPredictor:
         state.l2r_map = {}
         state.r2l_map = {}
 
-        # this currently leads to errors ... might be necessary in the future ...
         for i, pelem_i in enumerate(page_elems):
             for j, pelem_j in enumerate(page_elems):
 
                 if (
-                    False  # pelem_i.follows_maintext_order(pelem_j)
+                    pelem_i.follows_maintext_order(pelem_j)
                     and pelem_i.is_strictly_left_of(pelem_j)
                     and pelem_i.overlaps_vertically_with_iou(pelem_j, 0.8)
                 ):
@@ -382,11 +381,12 @@ class ReadingOrderPredictor:
 
         for j, pelem_j in enumerate(page_elems):
             if j in state.r2l_map:
-                i = state.r2l_map[j]
-                state.dn_map[i] = [j]
-                state.up_map[j] = [i]
-                continue
-
+                left_partner = state.r2l_map[j]
+                # Link the same-row left partner, then keep searching for vertical parents
+                if j not in state.dn_map[left_partner]:
+                    state.dn_map[left_partner].append(j)
+                if left_partner not in state.up_map[j]:
+                    state.up_map[j].append(left_partner)
             # Find elements above current that might precede it in reading order
             query_bbox = (pelem_j.l - 0.1, pelem_j.t, pelem_j.r + 0.1, float("inf"))
             candidates = list(spatial_idx.intersection(query_bbox))
@@ -430,6 +430,13 @@ class ReadingOrderPredictor:
         x_max = max(pelem_i.r, pelem_j.r) + 1.0
         y_min = pelem_j.t
         y_max = pelem_i.b
+
+        # pelem_i is only guaranteed to sit above pelem_j within is_strictly_above's
+        # epsilon, so pelem_i.b can slightly exceed pelem_j.t and leave y_min > y_max.
+        # Keep the query rectangle well-formed (min <= max on every axis); otherwise
+        # rtree raises "Coordinates must not have minimums more than maximums".
+        y_min, y_max = min(y_min, y_max), max(y_min, y_max)
+        x_min, x_max = min(x_min, x_max), max(x_min, x_max)
 
         candidates = list(spatial_idx.intersection((x_min, y_min, x_max, y_max)))
 

@@ -35,9 +35,13 @@ class CellAttention(nn.Module):
         self._relu = nn.ReLU()
         self._softmax = nn.Softmax(dim=1)  # softmax layer to calculate weights
 
+    _logger = None
+
     def _log(self):
-        # Setup a custom logger
-        return s.get_custom_logger(self.__class__.__name__, LOG_LEVEL)
+        # Setup a custom logger, built once per instance
+        if self._logger is None:
+            self._logger = s.get_custom_logger(self.__class__.__name__, LOG_LEVEL)
+        return self._logger
 
     def forward(self, encoder_out, decoder_hidden, language_out):
         """
@@ -118,9 +122,13 @@ class BBoxDecoder(nn.Module):
         h = self._init_h(mean_encoder_out).expand(batch_size, -1)
         return h
 
+    _logger = None
+
     def _log(self):
-        # Setup a custom logger
-        return s.get_custom_logger(self.__class__.__name__, LOG_LEVEL)
+        # Setup a custom logger, built once per instance
+        if self._logger is None:
+            self._logger = s.get_custom_logger(self.__class__.__name__, LOG_LEVEL)
+        return self._logger
 
     def inference(self, encoder_out, tag_H):
         """
