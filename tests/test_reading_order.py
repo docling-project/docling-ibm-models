@@ -208,7 +208,7 @@ def test_readingorder():
                 # print(f"true {key}: {val}")            
                 
                 total += 1.0
-                if key in pred_to_captions and pred_to_captions[key]==val:
+                if pred_to_captions.get(key, []) == val:
                     score += 1.0
 
             # print(f"to_captions: {score/total}")
@@ -229,7 +229,7 @@ def test_readingorder():
                 # print(f"true {key}: {val}")            
                 
                 total += 1.0
-                if key in pred_to_footnotes and pred_to_footnotes[key]==val:
+                if pred_to_footnotes.get(key, []) == val:
                     score += 1.0
 
             # print(f"to_footnotes: {score/total}")
