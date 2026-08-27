@@ -154,3 +154,25 @@ def test_simple_markers_unchanged_by_compound_patterns():
         "•",
     ]
     assert [item.enumerated for item in items] == [True] * 9 + [False]
+
+
+def test_multiline_item_text_is_not_truncated():
+    """A list item that spans several lines keeps all of its text, not just line one."""
+    doc = DoclingDocument(name="Multiline items")
+    group = doc.add_list_group(name="list")
+    raws = [
+        "[15] Author, Title, Journal\r\nvol. 436 (2012), 2963-2965.",
+        "1. First step of the procedure\r\ncontinued on the next line.",
+        "• Layerwise quantization. Finds optimal weights\r\nthat minimize the loss.",
+    ]
+    for raw in raws:
+        doc.add_list_item(text=raw, parent=group)
+
+    ListItemMarkerProcessor().process_document(doc)
+
+    items = [item for item in doc.texts if isinstance(item, ListItem)]
+
+    assert [item.marker for item in items] == ["[15]", "1.", "•"]
+    # marker + the separating whitespace + text must account for the whole original.
+    for item in items:
+        assert item.orig == f"{item.marker} {item.text}"
