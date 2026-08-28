@@ -1,3 +1,13 @@
+## [v4.0.0](https://github.com/docling-project/docling-ibm-models/releases/tag/v4.0.0) - 2026-08-28
+
+### Feature
+
+* Remove unused models ([#184](https://github.com/docling-project/docling-ibm-models/issues/184)) ([`c875daf`](https://github.com/docling-project/docling-ibm-models/commit/c875dafeaa554fbf2d6be20fb4267794d855e0d8))
+
+### Breaking
+
+* remove unused models ([#184](https://github.com/docling-project/docling-ibm-models/issues/184)) ([`c875daf`](https://github.com/docling-project/docling-ibm-models/commit/c875dafeaa554fbf2d6be20fb4267794d855e0d8))
+
 ## [v3.15.0](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.15.0) - 2026-08-28
 
 ### Feature
