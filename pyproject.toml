@@ -3,7 +3,7 @@ name = "docling-ibm-models"
 version = "3.15.0" # DO NOT EDIT, updated automatically
 description = "This package contains the AI models used by the Docling PDF conversion package"
 license = "MIT"
-keywords = ["docling", "convert", "document", "pdf", "layout model", "segmentation", "table structure", "table former"]
+keywords = ["docling", "convert", "document", "pdf", "table structure", "table former"]
 readme = "README.md"
 authors = [
   { name = "Nikos Livathinos", email = "nli@zurich.ibm.com" },
@@ -32,21 +32,15 @@ requires-python = '>=3.10,<4.0'
 dependencies = [
   'torch (>=2.2.2,<3.0.0)',
   'torchvision (>=0,<1)',
-  'jsonlines (>=3.1.0,<5.0.0)',
   'Pillow (>=10.0.0,<13.0.0)',
-  'tqdm (>=4.64.0,<5.0.0)',
   'huggingface_hub (>=0.23,<2)',
   'safetensors[torch] (>=0.4.3,<1)',
-  'pydantic (>=2.0.0,<3.0.0)',
-  'docling-core (>=2.33.0,<3.0.0)',
   # temporary solution until huggingface/transformers#46159 is resolved
   'transformers (>=4.42.0,<5.9.0,!=5.0.*,!=5.1.*,!=5.2.*,!=5.3.*) ; sys_platform == "darwin"',
   # transformers 5.13.0 breaks AutoImageProcessor.register() with a string config_class
   # (fixed upstream in huggingface/transformers#47148, shipped in 5.13.1); see #167
   'transformers (>=4.42.0,<6.0.0,!=5.0.*,!=5.1.*,!=5.2.*,!=5.3.*,!=5.13.0) ; sys_platform != "darwin"',
   'numpy (>=1.24.4,<3.0.0)',
-  "rtree>=1.0.0",
-  'accelerate (>=1.2.1,<2.0.0)',
 ]
 
 [project.optional-dependencies]
@@ -70,15 +64,12 @@ dev = [
     "flake8~=7.1",
     "flake8-docstrings~=1.6",
     "types-setuptools~=70.3",
-    "pandas-stubs~=2.1",
-    "types-requests~=2.31",
     "coverage~=7.6",
     "pytest~=8.3",
     "pytest-cov>=6.1.1",
     "pytest-dependency~=0.6",
     "pytest-xdist~=3.3",
     "python-semantic-release~=7.32",
-    'datasets~=3.2; python_version < "3.14"',
 ]
 
 [tool.uv]

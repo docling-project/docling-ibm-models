@@ -97,4 +97,4 @@ jobs:
       - name: Install package
         run: uv pip install dist/*.whl
       - name: Test a simple import
-        run: python -c 'from docling_ibm_models.layoutmodel.layout_predictor import LayoutPredictor'
+        run: python -c 'from docling_ibm_models.tableformer_v2 import TableFormerV2'

@@ -12,7 +12,6 @@
 AI modules to support the Docling PDF document conversion project.
 
 - TableFormer is an AI module that recognizes the structure of a table and the bounding boxes of the table content.
-- Layout model is an AI model that provides among other things ability to detect tables on the page. This package contains inference code for Layout model.
 
 
 ## Install
@@ -65,7 +64,6 @@ These are the main sections of the configuration file:
 You can download the model weights and config files from the links:
 
 - [TableFormer Checkpoint](https://huggingface.co/ds4sd/docling-models/tree/main/model_artifacts/tableformer)
-- [beehive_v0.0.5](https://huggingface.co/ds4sd/docling-models/tree/main/model_artifacts/layout/beehive_v0.0.5)
 
 
 ## Inference Tests
@@ -88,19 +86,3 @@ Visualization outlines:
 - `Bold Blue`: column header
 - `Bold Magenta`: row header
 - `Bold Brown`: section row (if table have one)
-
-
-## Demo
-
-A demo application allows to apply the `LayoutPredictor` on a directory `<input_dir>` that contains
-`png` images and visualize the predictions inside another directory `<viz_dir>`.
-
-First download the model weights (see above), then run:
-```
-python -m demo.demo_layout_predictor -i <input_dir> -v <viz_dir>
-```
-
-e.g.
-```
-python -m demo.demo_layout_predictor -i tests/test_data/samples -v viz/
-```
