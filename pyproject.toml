@@ -38,7 +38,7 @@ dependencies = [
   'huggingface_hub (>=0.23,<2)',
   'safetensors[torch] (>=0.4.3,<1)',
   'pydantic (>=2.0.0,<3.0.0)',
-  'docling-core (>=2.19.0,<3.0.0)',
+  'docling-core (>=2.33.0,<3.0.0)',
   # temporary solution until huggingface/transformers#46159 is resolved
   'transformers (>=4.42.0,<5.9.0,!=5.0.*,!=5.1.*,!=5.2.*,!=5.3.*) ; sys_platform == "darwin"',
   # transformers 5.13.0 breaks AutoImageProcessor.register() with a string config_class

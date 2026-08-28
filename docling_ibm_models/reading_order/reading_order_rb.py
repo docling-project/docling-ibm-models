@@ -1,8 +1,10 @@
 import copy
 import logging
+import math
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Set, Tuple
+from itertools import islice, takewhile
+from typing import Dict, Iterable, List, Set, Tuple
 
 from docling_core.types.doc.base import BoundingBox, Size
 from docling_core.types.doc.document import RefItem
@@ -56,6 +58,31 @@ class _ReadingOrderPredictorState:
     up_map: Dict[int, List[int]] = field(default_factory=dict)
     dn_map: Dict[int, List[int]] = field(default_factory=dict)
     heads: List[int] = field(default_factory=list)
+
+
+GRAPHIC_LABELS = {DocItemLabel.TABLE, DocItemLabel.PICTURE, DocItemLabel.CODE}
+
+
+def _is_graphic(element: PageElement) -> bool:
+    return element.label in GRAPHIC_LABELS
+
+
+def _graphic_run(elements: Iterable[PageElement]) -> List[PageElement]:
+    """The unbroken run of graphics `elements` opens with."""
+    return list(takewhile(_is_graphic, elements))
+
+
+def _shortest_box_gap(lhs: PageElement, rhs: PageElement) -> float:
+    """
+    Shortest distance between two boxes, 0 once they touch or overlap.
+
+    Along either axis the boxes span their union, so whatever the union has
+    left over once both are laid down is the gap between them. The union
+    helpers keep that right for either coordinate origin.
+    """
+    dx = max(0.0, lhs.x_union_with(rhs) - lhs.width - rhs.width)
+    dy = max(0.0, lhs.y_union_with(rhs) - lhs.height - rhs.height)
+    return math.hypot(dx, dy)
 
 
 class ReadingOrderPredictor:
@@ -607,125 +634,95 @@ class ReadingOrderPredictor:
             if not found_non_visited:
                 stack.pop()
 
+    @staticmethod
+    def _rank_caption_candidates(
+        page_elements: List[PageElement],
+    ) -> Dict[int, List[int]]:
+        """
+        Map each caption cid to the cids of the graphics it could belong to,
+        nearest first.
+
+        A caption only reaches the graphics in an unbroken run on either side
+        of it, ranked by the gap each leaves on the page rather than by
+        position in the run: the nearer graphic is not always the one above.
+        Equal gaps go to the preceding graphic.
+        """
+        # Reversed once for the whole page, so that each caption can scan back
+        # from its own index without a slice of its own.
+        backwards = page_elements[::-1]
+        size = len(page_elements)
+
+        preferred: Dict[int, List[int]] = {}
+        for ind, caption in enumerate(page_elements):
+            if caption.label != DocItemLabel.CAPTION:
+                continue
+            preceding = _graphic_run(islice(backwards, size - ind, None))
+            following = _graphic_run(islice(page_elements, ind + 1, None))
+            # The candidates, in run order, tagged 0 preceding / 1 following so
+            # that equal gaps go to the graphic above.
+            ranked = {
+                graphic.cid: (_shortest_box_gap(caption, graphic), side)
+                for side, run in ((0, preceding), (1, following))
+                for graphic in run
+            }
+            preferred[caption.cid] = sorted(ranked, key=lambda cid: ranked[cid])
+        return preferred
+
+    @staticmethod
+    def _match_caption(
+        caption_cid: int,
+        preferred: Dict[int, List[int]],
+        matched: Dict[int, int],
+        seen: Set[int],
+    ) -> Dict[int, int]:
+        """
+        Given the current matching `matched` (graphic cid -> caption cid),
+        return a new matching in which the caption owns one of its graphics,
+        displacing an earlier caption when that one can rehouse itself. Empty
+        if no graphic can be freed up.
+
+        The displacement chain is walked on an explicit stack, since it can
+        grow as long as the page. Each frame is a caption and the graphics it
+        has left to try, and the moves in `chain` take effect only once the
+        chain reaches a graphic nobody holds. `seen` keeps it from revisiting
+        a graphic; pass a fresh set per caption.
+        """
+        stack = [(caption_cid, iter(preferred[caption_cid]))]
+        chain: List[Tuple[int, int]] = []
+        while stack:
+            claimant, candidates = stack[-1]
+            graphic_cid = next((cid for cid in candidates if cid not in seen), None)
+            if graphic_cid is None:
+                # Out of options: undo the move that got here, and let the
+                # caption below resume its own search.
+                stack.pop()
+                if chain:
+                    chain.pop()
+                continue
+            seen.add(graphic_cid)
+            chain.append((graphic_cid, claimant))
+            held_by = matched.get(graphic_cid)
+            if held_by is None:
+                return matched | dict(chain)
+            # The graphic is taken; let its caption look for another one.
+            stack.append((held_by, iter(preferred[held_by])))
+        return {}
+
     def _find_to_captions(
         self, page_elements: List[PageElement]
     ) -> Dict[int, List[int]]:
 
-        captions: Set[int] = set()
+        # page_elements arrives in reading order, which already places each caption
+        # next to its graphic; cids are parse order and would scatter them.
+        preferred = self._rank_caption_candidates(page_elements)
 
-        # caption to picture-item/table-item
-        from_captions: Dict[int, Tuple[List[int], List[int]]] = {}
+        # Match by augmenting paths, not best-first: a caption with a second
+        # choice must give way to one that has none, or both end up orphaned.
+        matched: Dict[int, int] = {}
+        for cid in preferred:
+            matched = self._match_caption(cid, preferred, matched, set()) or matched
 
-        # picture-item/table-item to caption
-        to_captions: Dict[int, List[int]] = {}
-
-        # init from_captions
-        for ind, page_element in enumerate(page_elements):
-            if page_element.label == DocItemLabel.CAPTION:
-                from_captions[page_element.cid] = ([], [])
-
-        for ind, page_element in enumerate(page_elements):
-            if page_element.label == DocItemLabel.CAPTION:
-                ind_m1 = ind - 1
-                while ind_m1 >= 0 and page_elements[ind_m1].label in [
-                    DocItemLabel.TABLE,
-                    DocItemLabel.PICTURE,
-                    DocItemLabel.CODE,
-                ]:
-                    from_captions[page_element.cid][0].append(page_elements[ind_m1].cid)
-                    ind_m1 = ind_m1 - 1
-
-                ind_p1 = ind + 1
-                while ind_p1 < len(page_elements) and page_elements[ind_p1].label in [
-                    DocItemLabel.TABLE,
-                    DocItemLabel.PICTURE,
-                    DocItemLabel.CODE,
-                ]:
-                    from_captions[page_element.cid][1].append(page_elements[ind_p1].cid)
-                    ind_p1 = ind_p1 + 1
-
-        """
-        for cid_i, to_item in from_captions.items():
-            print("from-captions: ", cid_i, ": ", to_item[0], "; ", to_item[1])
-        """
-
-        assigned_cids = set()
-        for cid_i, to_item in from_captions.items():
-            if len(from_captions[cid_i][0]) == 0 and len(from_captions[cid_i][1]) > 0:
-                for cid_j in from_captions[cid_i][1]:
-                    # To avoid overwriting that to_captions[cid_j] when they exist
-                    if to_captions.get(cid_j) is None:
-                        to_captions[cid_j] = [cid_i]
-                    elif cid_i not in to_captions[cid_j]:
-                        to_captions[cid_j].append(cid_i)
-                    # to_captions[cid_j] = [cid_i]
-
-                    assigned_cids.add(cid_j)
-
-            if len(from_captions[cid_i][0]) > 0 and len(from_captions[cid_i][1]) == 0:
-                for cid_j in from_captions[cid_i][0]:
-                    # To avoid overwriting that to_captions[cid_j] when they exist
-                    if to_captions.get(cid_j) is None:
-                        to_captions[cid_j] = [cid_i]
-                    elif cid_i not in to_captions[cid_j]:
-                        to_captions[cid_j].append(cid_i)
-                    # to_captions[cid_j] = [cid_i]
-                    assigned_cids.add(cid_j)
-
-        for cid_i, to_item in from_captions.items():
-            # To avoid changing the size of from_captions[cid_i][0] while iterating...
-            preceding_to_remove = set()
-            following_to_remove = set()
-
-            for cid_j in from_captions[cid_i][0]:
-                if cid_j in assigned_cids:
-                    preceding_to_remove.add(cid_j)
-                    # from_captions[cid_i][0].remove(cid_j)
-
-            for cid_j in from_captions[cid_i][1]:
-                if cid_j in assigned_cids:
-                    following_to_remove.add(cid_j)
-                    # from_captions[cid_i][1].remove(cid_j)
-
-            for num in preceding_to_remove:
-                from_captions[cid_i][0].remove(num)
-            for num in following_to_remove:
-                from_captions[cid_i][1].remove(num)
-
-        for cid_i, to_item in from_captions.items():
-            if len(from_captions[cid_i][0]) == 0 and len(from_captions[cid_i][1]) > 0:
-                for cid_j in from_captions[cid_i][1]:
-                    to_captions[cid_j] = [cid_i]
-                    assigned_cids.add(cid_j)
-
-            if len(from_captions[cid_i][0]) > 0 and len(from_captions[cid_i][1]) == 0:
-                for cid_j in from_captions[cid_i][0]:
-                    to_captions[cid_j] = [cid_i]
-                    assigned_cids.add(cid_j)
-
-        """
-        for cid_i, to_item in to_captions.items():
-            print("to-captions: ", cid_i, ": ", to_item)
-        """
-
-        def _remove_overlapping_indexes(
-            mapping: Dict[int, List[int]],
-        ) -> Dict[int, List[int]]:
-            used = set()
-            result = {}
-            for key, values in sorted(mapping.items()):
-                valid = [
-                    v
-                    for v in sorted(values, key=lambda v: abs(v - key))
-                    if v not in used
-                ]
-                if valid:
-                    result[key] = [valid[0]]
-                    used.add(valid[0])
-            return result
-
-        to_captions = _remove_overlapping_indexes(to_captions)
-        return to_captions
+        return {graphic: [caption] for graphic, caption in matched.items()}
 
     def _find_to_footnotes(
         self, page_elements: List[PageElement]
