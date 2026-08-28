@@ -216,7 +216,7 @@ class ReadingOrderPredictor:
             if ind <= curr_ind:
                 continue
 
-            if elem.label in [DocItemLabel.TEXT]:
+            if elem.label in [DocItemLabel.TEXT, DocItemLabel.LIST_ITEM]:
 
                 merge_list: List[int] = []
                 check_ind = ind
@@ -237,13 +237,24 @@ class ReadingOrderPredictor:
                             or elem.is_strictly_left_of(sorted_elements[ind_p1])
                         )
                     ):
-                        m1 = re.fullmatch(
-                            r".+([a-z,\-\u00AD])(\s*)", sorted_elements[check_ind].text
-                        )
-                        m2 = re.fullmatch(
-                            r"(\s*[a-zA-Z\u00C0-\u024F])(.+)",
-                            sorted_elements[ind_p1].text,
-                        )
+                        if elem.label == DocItemLabel.LIST_ITEM:
+                            current_text = sorted_elements[check_ind].text.rstrip()
+                            next_text = sorted_elements[ind_p1].text.lstrip()
+                            m1 = current_text.endswith(("-", "\u00AD"))
+                            m2 = bool(next_text) and next_text[0].islower()
+                        else:
+                            m1 = bool(
+                                re.fullmatch(
+                                    r".+([a-z,\-\u00AD])(\s*)",
+                                    sorted_elements[check_ind].text,
+                                )
+                            )
+                            m2 = bool(
+                                re.fullmatch(
+                                    r"(\s*[a-zA-Z\u00C0-\u024F])(.+)",
+                                    sorted_elements[ind_p1].text,
+                                )
+                            )
 
                         if m1 and m2:
                             merge_list.append(sorted_elements[ind_p1].cid)
