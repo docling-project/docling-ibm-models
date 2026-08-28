@@ -1,3 +1,21 @@
+## [v3.15.0](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.15.0) - 2026-08-28
+
+### Feature
+
+* **reading-order:** Re-enable same-row left-to-right linking with additive r2l fix ([#163](https://github.com/docling-project/docling-ibm-models/issues/163)) ([`080aded`](https://github.com/docling-project/docling-ibm-models/commit/080aded1d4aa02c861d2e8f52f71a3465419e035))
+
+### Fix
+
+* Correct graphics-to-captions assignment in reading order ([#183](https://github.com/docling-project/docling-ibm-models/issues/183)) ([`cfd1d08`](https://github.com/docling-project/docling-ibm-models/commit/cfd1d08a8b648d8a597b0b023c7b123aa6a611c1))
+* **deps:** Exclude transformers 5.13.0, which breaks the image-processor registration ([#178](https://github.com/docling-project/docling-ibm-models/issues/178)) ([`5354f0f`](https://github.com/docling-project/docling-ibm-models/commit/5354f0fc0f2f35c246ccc29eccfe600f2d5a3008))
+* UnboundLocalError in predict_dummy when no bboxes are detected ([#147](https://github.com/docling-project/docling-ibm-models/issues/147)) ([`6974dfe`](https://github.com/docling-project/docling-ibm-models/commit/6974dfe792a621825474897051b07d025b593fab))
+* **tf_cell_matcher:** Correct the vertical non-overlap check in find_intersection (#142) ([#177](https://github.com/docling-project/docling-ibm-models/issues/177)) ([`a81c60a`](https://github.com/docling-project/docling-ibm-models/commit/a81c60aa7fea2ec9d4307adbb9864e5267d4848b))
+* **list_item_normalizer:** Keep multi-line list item text (#179) ([#181](https://github.com/docling-project/docling-ibm-models/issues/181)) ([`36fe1d0`](https://github.com/docling-project/docling-ibm-models/commit/36fe1d03d26a82ac01b18154fca1e23313432e46))
+
+### Performance
+
+* Cache per-instance logger in _log() to remove millions of get_custom_logger calls ([#182](https://github.com/docling-project/docling-ibm-models/issues/182)) ([`68c83ea`](https://github.com/docling-project/docling-ibm-models/commit/68c83ea62ff75d6dc91a7893f7cb2e38a62e74a4))
+
 ## [v3.14.0](https://github.com/docling-project/docling-ibm-models/releases/tag/v3.14.0) - 2026-08-11
 
 ### Feature
