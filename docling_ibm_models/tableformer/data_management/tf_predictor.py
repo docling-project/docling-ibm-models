@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import threading
+from bisect import bisect_left
 from itertools import groupby
 from pathlib import Path
 
@@ -463,6 +464,63 @@ class TFPredictor:
         # return the resized image
         return resized, sf
 
+    @staticmethod
+    def _compress_row_col_indexes(tf_responses):
+        r"""
+        Renumber the row/column offsets of the matched cells so that they are
+        sequential and without gaps.
+
+        The IDs carried by the matched cells come from the CellMatcher, not from
+        TableFormer, and they do contain gaps: a row or column made up entirely
+        of empty cells has all of its cells discarded during matching, so no cell
+        starts there anymore. Both ends of a cell are therefore mapped through
+        the same table of surviving IDs -- computing the end offset as
+        "start + span" instead would count the discarded rows/columns that a
+        spanning cell crosses, and push the end offset (and the span) past the
+        real number of rows/columns.
+
+        Parameters
+        ----------
+        tf_responses : list of dict
+            Matched cells, updated in place.
+
+        Returns
+        -------
+        (int, int)
+            The number of columns and rows after the renumbering.
+        """
+        # Collect the surviving col/row IDs, which double as the new indexes.
+        start_cols = sorted({cell["start_col_offset_idx"] for cell in tf_responses})
+        start_rows = sorted({cell["start_row_offset_idx"] for cell in tf_responses})
+
+        num_cols = 0
+        num_rows = 0
+        # After this - put actual indexes of IDs back into predicted structure...
+        for tf_response_cell in tf_responses:
+            start_col_id = tf_response_cell["start_col_offset_idx"]
+            start_row_id = tf_response_cell["start_row_offset_idx"]
+            # The end offset is exclusive, so bisect_left gives the number of
+            # surviving cols/rows that precede it.
+            end_col_offset_idx = bisect_left(
+                start_cols, start_col_id + tf_response_cell["col_span"]
+            )
+            end_row_offset_idx = bisect_left(
+                start_rows, start_row_id + tf_response_cell["row_span"]
+            )
+            start_col_offset_idx = bisect_left(start_cols, start_col_id)
+            start_row_offset_idx = bisect_left(start_rows, start_row_id)
+
+            tf_response_cell["start_col_offset_idx"] = start_col_offset_idx
+            tf_response_cell["end_col_offset_idx"] = end_col_offset_idx
+            tf_response_cell["col_span"] = end_col_offset_idx - start_col_offset_idx
+            tf_response_cell["start_row_offset_idx"] = start_row_offset_idx
+            tf_response_cell["end_row_offset_idx"] = end_row_offset_idx
+            tf_response_cell["row_span"] = end_row_offset_idx - start_row_offset_idx
+
+            num_cols = max(num_cols, end_col_offset_idx)
+            num_rows = max(num_rows, end_row_offset_idx)
+        return num_cols, num_rows
+
     def multi_table_predict(
         self,
         iocr_page,
@@ -509,62 +567,10 @@ class TFPredictor:
             # Indexes should be in increasing order, without gaps
 
             if sort_row_col_indexes:
-                # Fix col/row indexes
-                # Arranges all col/row indexes sequentially without gaps using input IDs
-
-                indexing_start_cols = (
-                    []
-                )  # Index of original start col IDs (not indexes)
-                indexing_start_rows = (
-                    []
-                )  # Index of original start row IDs (not indexes)
-
-                # First, collect all possible predicted IDs, to be used as indexes
-                # ID's returned by Tableformer are sequential, but might contain gaps
-                for tf_response_cell in tf_responses:
-                    start_col_offset_idx = tf_response_cell["start_col_offset_idx"]
-                    start_row_offset_idx = tf_response_cell["start_row_offset_idx"]
-
-                    # Collect all possible col/row IDs:
-                    if start_col_offset_idx not in indexing_start_cols:
-                        indexing_start_cols.append(start_col_offset_idx)
-                    if start_row_offset_idx not in indexing_start_rows:
-                        indexing_start_rows.append(start_row_offset_idx)
-
-                indexing_start_cols.sort()
-                indexing_start_rows.sort()
-
-                max_end_col_idx = 0
-                max_end_row_idx = 0
-                # After this - put actual indexes of IDs back into predicted structure...
-                for tf_response_cell in tf_responses:
-                    tf_response_cell["start_col_offset_idx"] = (
-                        indexing_start_cols.index(
-                            tf_response_cell["start_col_offset_idx"]
-                        )
-                    )
-                    tf_response_cell["end_col_offset_idx"] = (
-                        tf_response_cell["start_col_offset_idx"]
-                        + tf_response_cell["col_span"]
-                    )
-                    max_end_col_idx = max(
-                        max_end_col_idx, tf_response_cell["end_col_offset_idx"]
-                    )
-                    tf_response_cell["start_row_offset_idx"] = (
-                        indexing_start_rows.index(
-                            tf_response_cell["start_row_offset_idx"]
-                        )
-                    )
-                    tf_response_cell["end_row_offset_idx"] = (
-                        tf_response_cell["start_row_offset_idx"]
-                        + tf_response_cell["row_span"]
-                    )
-                    max_end_row_idx = max(
-                        max_end_row_idx, tf_response_cell["end_row_offset_idx"]
-                    )
+                num_cols, num_rows = self._compress_row_col_indexes(tf_responses)
                 # Counting matched cols/rows from actual indexes (and not ids)
-                predict_details["num_cols"] = max_end_col_idx
-                predict_details["num_rows"] = max_end_row_idx
+                predict_details["num_cols"] = num_cols
+                predict_details["num_rows"] = num_rows
             else:
                 otsl_seq = predict_details["prediction"]["rs_seq"]
                 predict_details["num_cols"] = otsl_seq.index("nl")
