@@ -735,6 +735,58 @@ class MatchingPostProcessor:
         bbox_result[3] = max([bbox1[3], bbox2[3]])
         return bbox_result
 
+    def _attach_orphan_to_cell(
+        self,
+        pdf_cell_id,
+        new_row_id,
+        new_column_id,
+        confidence,
+        pdf_bbox,
+        table_cells,
+        new_table_cells,
+        new_matches,
+        max_cell_id,
+    ):
+        """Attach one recovered orphan pdf cell to a (row, column) slot.
+
+        Reuses the structural table cell already at that slot (merging bboxes)
+        if one exists, otherwise creates a new body cell, and registers the
+        match. Shared by the nearest-column and nearest-row recovery passes.
+        Returns the possibly-incremented ``max_cell_id``.
+        """
+        new_table_cell_id = -1
+        tcell = [
+            tc
+            for tc in table_cells
+            if tc["row_id"] == new_row_id and tc["column_id"] == new_column_id
+        ]
+        if tcell:
+            new_table_cell_id = tcell[0]["cell_id"]
+            self._log().debug("reusing table_cell_id: {}".format(new_table_cell_id))
+            for cell in new_table_cells:
+                if cell["cell_id"] == new_table_cell_id:
+                    cell["bbox"] = self._merge_two_bboxes(cell["bbox"], pdf_bbox)
+
+        if new_table_cell_id < 0:
+            max_cell_id += 1
+            new_table_cell_id = max_cell_id
+            new_table_cells.append(
+                {
+                    "bbox": pdf_bbox,
+                    "cell_id": new_table_cell_id,
+                    "column_id": new_column_id,
+                    "label": "body",
+                    "row_id": new_row_id,
+                    "cell_class": 2,
+                }
+            )
+            self._log().debug("making new table_cell_id: {}".format(new_table_cell_id))
+
+        new_matches[str(pdf_cell_id)] = [
+            {"post": confidence, "table_cell_id": new_table_cell_id}
+        ]
+        return max_cell_id
+
     def _pick_orphan_cells(
         self, tab_rows, tab_cols, max_cell_id, table_cells, pdf_cells, matches
     ):
@@ -798,6 +850,10 @@ class MatchingPostProcessor:
         # List with pdf_ids which are used in some (any) row
         used_row_pdf_ids = []
         used_row_rowid = []
+        # Cache each row's Y-centroid so we can fall back to nearest-row
+        # assignment for orphans that match a column band but no row band
+        # (mirror of the col_centroids fallback further down).
+        row_centroids: dict[int, float] = {}
 
         for row in range(tab_rows):
             bbox_y1s = []  # y2 > y1
@@ -827,6 +883,10 @@ class MatchingPostProcessor:
                 row_y1 = min(bbox_y1s)
             if len(bbox_y2s) > 0:
                 row_y2 = max(bbox_y2s)
+
+            # Cache centroid for nearest-row fallback (see orphan-columns loop).
+            if row_y1 >= 0 and row_y2 >= 0:
+                row_centroids[row] = (row_y1 + row_y2) / 2
 
             # Find "orphan" cells that intersect the band
             for pdf_cell in pdf_cells:
@@ -1107,59 +1167,75 @@ class MatchingPostProcessor:
                     min_dist,
                 )
 
-            # 1. Find table_cell_id by new_row_id / new_column_id
-            new_table_cell_id = -1
-            tcell = list(
-                filter(
-                    lambda table_cell: table_cell["row_id"] == new_row_id
-                    and table_cell["column_id"] == new_column_id,
-                    table_cells,
-                )
+            max_cell_id = self._attach_orphan_to_cell(
+                pdf_cell_id,
+                new_row_id,
+                new_column_id,
+                confidence,
+                pdf_bbox,
+                table_cells,
+                new_table_cells,
+                new_matches,
+                max_cell_id,
             )
 
-            if len(tcell) > 0:
-                new_table_cell_id = tcell[0]["cell_id"]
-                self._log().debug("reusing table_cell_id: {}".format(new_table_cell_id))
+        # Symmetric to the nearest-column fallback above: an orphan that matches
+        # a column band but no row band never entered the row-keyed loop above
+        # and would be dropped. Snap it to the nearest row by Y-centroid so its
+        # text survives, and WARN. This is the same content-loss symptom on the
+        # row axis -- e.g. a trailing row that sits just below the predicted
+        # grid (docling issue #3402).
+        row_matched_ids = set(orphan_rows_pdf_ids)
+        for pdf_cell_id in sorted(used_col_pdf_ids, key=int):
+            if int(pdf_cell_id) in row_matched_ids:
+                continue
+            if str(pdf_cell_id) in new_matches:
+                continue
+            new_column_id = used_col_columnid[used_col_pdf_ids.index(pdf_cell_id)]
+            pdf_cell = next(
+                (p for p in pdf_cells if str(p["id"]) == str(pdf_cell_id)), None
+            )
+            if pdf_cell is None or not row_centroids:
+                # Nothing to attach to; preserve historic behaviour.
+                continue
+            pdf_bbox = pdf_cell["bbox"]
+            cell_cy = (pdf_bbox[1] + pdf_bbox[3]) / 2
+            new_row_id, min_dist = min(
+                ((r, abs(cell_cy - cy)) for r, cy in row_centroids.items()),
+                key=lambda t: t[1],
+            )
+            # confidence < 0 marks a snapped fallback (see nearest-column above).
+            confidence = -int(round(min_dist)) - 1
+            self._log().warning(
+                "Orphan pdf_cell %s recovered to row=%s by nearest-row "
+                "fallback (col=%s, y=%.1f, dist=%.1f)",
+                pdf_cell_id,
+                new_row_id,
+                new_column_id,
+                cell_cy,
+                min_dist,
+            )
+            max_cell_id = self._attach_orphan_to_cell(
+                pdf_cell_id,
+                new_row_id,
+                new_column_id,
+                confidence,
+                pdf_bbox,
+                table_cells,
+                new_table_cells,
+                new_matches,
+                max_cell_id,
+            )
 
-                for i in range(len(new_table_cells)):
-                    if new_table_cells[i]["cell_id"] == new_table_cell_id:
-                        bbox_tmp = self._merge_two_bboxes(
-                            new_table_cells[i]["bbox"], pdf_bbox
-                        )
-                        new_table_cells[i]["bbox"] = bbox_tmp
-
-            if new_table_cell_id < 0:
-                max_cell_id += 1
-                new_table_cell_id = max_cell_id
-
-                new_table_cell = {
-                    "bbox": pdf_bbox,
-                    "cell_id": new_table_cell_id,
-                    "column_id": new_column_id,
-                    "label": "body",
-                    "row_id": new_row_id,
-                    "cell_class": 2,
-                }
-                self._log().debug(
-                    "making new table_cell_id: {}".format(new_table_cell_id)
-                )
-                new_table_cells.append(new_table_cell)
-
-            # And then add new match to the new_matches
-            new_matches[str(pdf_cell_id)] = [
-                {"post": confidence, "table_cell_id": new_table_cell_id}
-            ]
-
-        # Step 9 only rescues an orphan that intersects a row band; one that
-        # matches no band at all never enters the loop above and is discarded.
-        # That is a real content loss (its text is in no table cell, and the
-        # layout cluster already claimed it), so say so instead of failing
-        # silently -- callers have no other way to notice.
+        # After both fallbacks, anything still unassigned matched neither a row
+        # nor a column band. That is a real content loss (its text is in no
+        # table cell, and the layout cluster already claimed it), so say so
+        # instead of failing silently -- callers have no other way to notice.
         unassigned_pdf_ids = orphan_pdf_ids.difference(new_matches)
         if unassigned_pdf_ids:
             self._log().warning(
-                "{} of {} pdf cells matched no row band of the {}x{} grid and "
-                "were dropped from the table".format(
+                "{} of {} pdf cells matched neither a row nor a column band of "
+                "the {}x{} grid and were dropped from the table".format(
                     len(unassigned_pdf_ids), len(pdf_cells), tab_rows, tab_cols
                 )
             )
