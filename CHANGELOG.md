@@ -1,3 +1,13 @@
+## [v4.0.1](https://github.com/docling-project/docling-ibm-models/releases/tag/v4.0.1) - 2026-09-01
+
+### Fix
+
+* **tableformer:** Consolidate post-processing source fixes (#176, #159, #175) ([#185](https://github.com/docling-project/docling-ibm-models/issues/185)) ([`b234bf1`](https://github.com/docling-project/docling-ibm-models/commit/b234bf1710c8d89c63088653c37857ef9ca60132))
+
+### Performance
+
+* **tableformer:** O(1) orphan pdf-cell lookup in recovery fallbacks ([#186](https://github.com/docling-project/docling-ibm-models/issues/186)) ([`bfa5c3c`](https://github.com/docling-project/docling-ibm-models/commit/bfa5c3caedaab7aeaff19a4195bc1791a4787195))
+
 ## [v4.0.0](https://github.com/docling-project/docling-ibm-models/releases/tag/v4.0.0) - 2026-08-28
 
 ### Feature
