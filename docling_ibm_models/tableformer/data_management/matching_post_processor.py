@@ -841,6 +841,9 @@ class MatchingPostProcessor:
             for pdf_cell in pdf_cells
             if str(pdf_cell["id"]) not in matches
         }
+        # id -> pdf_cell, so the nearest-row/column fallbacks below look cells up
+        # in O(1) instead of rescanning pdf_cells for every orphan (O(P) each).
+        pdf_cell_by_id = {str(pdf_cell["id"]): pdf_cell for pdf_cell in pdf_cells}
 
         # Identify orphan rows (START)
         orphan_rows = []
@@ -1140,10 +1143,7 @@ class MatchingPostProcessor:
                 # narrower than the page region disappear from the output).
                 # Snap to the nearest column by X-centroid distance and emit
                 # a WARNING so the recovery is observable.
-                pdf_cell = next(
-                    (p for p in pdf_cells if str(p["id"]) == pdf_cell_id),
-                    None,
-                )
+                pdf_cell = pdf_cell_by_id.get(pdf_cell_id)
                 if pdf_cell is None or not col_centroids:
                     # Nothing to attach to; preserve historic behaviour.
                     continue
@@ -1192,9 +1192,7 @@ class MatchingPostProcessor:
             if str(pdf_cell_id) in new_matches:
                 continue
             new_column_id = used_col_columnid[used_col_pdf_ids.index(pdf_cell_id)]
-            pdf_cell = next(
-                (p for p in pdf_cells if str(p["id"]) == str(pdf_cell_id)), None
-            )
+            pdf_cell = pdf_cell_by_id.get(str(pdf_cell_id))
             if pdf_cell is None or not row_centroids:
                 # Nothing to attach to; preserve historic behaviour.
                 continue
