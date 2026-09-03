@@ -543,7 +543,7 @@ wheels = [
 
 [[package]]
 name = "docling-ibm-models"
-version = "4.0.1"
+version = "4.0.2"
 source = { editable = "." }
 dependencies = [
     { name = "huggingface-hub" },

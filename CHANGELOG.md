@@ -1,3 +1,9 @@
+## [v4.0.2](https://github.com/docling-project/docling-ibm-models/releases/tag/v4.0.2) - 2026-09-03
+
+### Fix
+
+* Exclude broken transformers versions ([#187](https://github.com/docling-project/docling-ibm-models/issues/187)) ([`6c36abf`](https://github.com/docling-project/docling-ibm-models/commit/6c36abf58fb27a1a5d801f8f1abe6afaa0362160))
+
 ## [v4.0.1](https://github.com/docling-project/docling-ibm-models/releases/tag/v4.0.1) - 2026-09-01
 
 ### Fix
