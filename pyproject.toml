@@ -35,10 +35,7 @@ dependencies = [
   'Pillow (>=10.0.0,<13.0.0)',
   'huggingface_hub (>=0.23,<2)',
   'safetensors[torch] (>=0.4.3,<1)',
-  'transformers (>=4.42.0,<6.0.0) ; sys_platform == "darwin"',
-  # transformers 5.13.0 breaks AutoImageProcessor.register() with a string config_class
-  # (fixed upstream in huggingface/transformers#47148, shipped in 5.13.1); see #167
-  'transformers (>=4.42.0,<6.0.0,!=5.0.*,!=5.1.*,!=5.2.*,!=5.3.*,!=5.13.0) ; sys_platform != "darwin"',
+  'transformers (>=4.42.0,<6.0.0)',
   'numpy (>=1.24.4,<3.0.0)',
 ]
 
