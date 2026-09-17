@@ -1157,7 +1157,7 @@ class MatchingPostProcessor:
                 # consumers can distinguish high-confidence band matches from
                 # snapped fallbacks if they care.
                 confidence = -int(round(min_dist)) - 1
-                self._log().warning(
+                self._log().debug(
                     "Orphan pdf_cell %s recovered to col=%s by nearest-column "
                     "fallback (row=%s, x=%.1f, dist=%.1f)",
                     pdf_cell_id,
@@ -1204,7 +1204,7 @@ class MatchingPostProcessor:
             )
             # confidence < 0 marks a snapped fallback (see nearest-column above).
             confidence = -int(round(min_dist)) - 1
-            self._log().warning(
+            self._log().debug(
                 "Orphan pdf_cell %s recovered to row=%s by nearest-row "
                 "fallback (col=%s, y=%.1f, dist=%.1f)",
                 pdf_cell_id,
