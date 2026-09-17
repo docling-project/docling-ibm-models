@@ -1,7 +1,9 @@
 import logging
+from unittest.mock import patch
 
 import pytest
 
+import docling_ibm_models.tableformer.data_management.matching_post_processor as _mpp
 from docling_ibm_models.tableformer.data_management.matching_post_processor import (
     MatchingPostProcessor,
 )
@@ -13,7 +15,11 @@ def _processor() -> MatchingPostProcessor:
 
 @pytest.fixture
 def captured_logs():
-    """Collect what MatchingPostProcessor logs, whatever handlers it installs."""
+    """Collect what MatchingPostProcessor logs, whatever handlers it installs.
+
+    We patch the module-level LOG_LEVEL to DEBUG for the duration of the
+    fixture so that every get_custom_logger call inside the test sets DEBUG.
+    """
     records: list[tuple[str, str]] = []
 
     class _Collector(logging.Handler):
@@ -23,10 +29,11 @@ def captured_logs():
     logger = logging.getLogger(MatchingPostProcessor.__name__)
     handler = _Collector()
     logger.addHandler(handler)
-    try:
-        yield records
-    finally:
-        logger.removeHandler(handler)
+    with patch.object(_mpp, "LOG_LEVEL", logging.DEBUG):
+        try:
+            yield records
+        finally:
+            logger.removeHandler(handler)
 
 
 def test_orphan_cells_outside_every_band_are_reported(captured_logs):
@@ -106,9 +113,10 @@ def test_orphan_with_column_band_no_row_band_recovered_to_nearest_row(captured_l
     # confidence < 0 marks the snapped fallback.
     assert assigned["post"] < 0
 
-    warnings = [m for level, m in captured_logs if level == "WARNING"]
-    assert any("nearest-row fallback" in m for m in warnings)
+    debug_msgs = [m for level, m in captured_logs if level == "DEBUG"]
+    assert any("nearest-row fallback" in m for m in debug_msgs)
     # No cell was left unplaceable, so no drop is reported.
+    warnings = [m for level, m in captured_logs if level == "WARNING"]
     assert not any("were dropped" in m for m in warnings)
 
 
