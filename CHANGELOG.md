@@ -1,3 +1,9 @@
+## [v4.0.3](https://github.com/docling-project/docling-ibm-models/releases/tag/v4.0.3) - 2026-09-18
+
+### Fix
+
+* **tableformer:** Downgrade recovered-orphan log messages ([#189](https://github.com/docling-project/docling-ibm-models/issues/189)) ([`2057f3c`](https://github.com/docling-project/docling-ibm-models/commit/2057f3cbb33b37ed6f01656a8eaaa2db195574a1))
+
 ## [v4.0.2](https://github.com/docling-project/docling-ibm-models/releases/tag/v4.0.2) - 2026-09-03
 
 ### Fix
