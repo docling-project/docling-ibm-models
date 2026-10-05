@@ -499,7 +499,15 @@ class CellMatcher:
             table_cell_id = table_cell["cell_id"]
             t_bbox = table_cell["bbox"]
 
-            for j, pdf_cell in enumerate(pdf_cells):
+            # Skip at once the pdf cells find_intersection() rejects
+            disjoint = (
+                (t_bbox[2] < pdf_bboxes[:, 0])
+                | (pdf_bboxes[:, 2] < t_bbox[0])
+                | (t_bbox[1] > pdf_bboxes[:, 3])
+                | (pdf_bboxes[:, 1] > t_bbox[3])
+            )
+            for j in np.flatnonzero(~disjoint).tolist():
+                pdf_cell = pdf_cells[j]
                 pdf_cell_id = pdf_cell["id"]
                 p_bbox = pdf_cell["bbox"]
 
