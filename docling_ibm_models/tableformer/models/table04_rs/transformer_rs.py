@@ -4,6 +4,7 @@ from typing import Optional
 
 import torch
 from torch import Tensor, nn
+from torch.nn import functional as F
 
 import docling_ibm_models.tableformer.utils.utils as u
 
@@ -68,6 +69,22 @@ class TMTransformerDecoder(nn.TransformerDecoder):
         return output, out_cache  # type: ignore
 
 
+def _attend(attn: nn.MultiheadAttention, query: Tensor, kv: Tensor) -> Tensor:
+    """attn(query, kv, kv)[0] without masks, minus most of the per-call overhead
+    of nn.MultiheadAttention, which dominates when decoding one tag at a time."""
+    E = query.shape[-1]
+    w, b = attn.in_proj_weight, attn.in_proj_bias
+    q = F.linear(query, w[:E], b[:E])
+    k, v = F.linear(kv, w[E:], b[E:]).chunk(2, dim=-1)
+
+    def heads(t: Tensor) -> Tensor:  # (L, N, E) -> (N, H, L, E / H)
+        return t.unflatten(-1, (attn.num_heads, -1)).permute(1, 2, 0, 3)
+
+    p = attn.dropout if attn.training else 0.0
+    out = F.scaled_dot_product_attention(heads(q), heads(k), heads(v), dropout_p=p)
+    return attn.out_proj(out.permute(2, 0, 1, 3).flatten(-2))
+
+
 class TMTransformerDecoderLayer(nn.TransformerDecoderLayer):
     def forward(  # type: ignore
         self,
@@ -89,26 +106,12 @@ class TMTransformerDecoderLayer(nn.TransformerDecoderLayer):
         # From PyTorch but modified to only use the last tag
         tgt_last_tok = tgt[-1:, :, :]
 
-        tmp_tgt = self.self_attn(
-            tgt_last_tok,
-            tgt,
-            tgt,
-            attn_mask=None,  # None, because we only care about the last tag
-            key_padding_mask=tgt_key_padding_mask,
-            need_weights=False,  # Optimization: Don't compute attention weights
-        )[0]
+        tmp_tgt = _attend(self.self_attn, tgt_last_tok, tgt)
         tgt_last_tok = tgt_last_tok + self.dropout1(tmp_tgt)
         tgt_last_tok = self.norm1(tgt_last_tok)
 
         if memory is not None:
-            tmp_tgt = self.multihead_attn(
-                tgt_last_tok,
-                memory,
-                memory,
-                attn_mask=memory_mask,
-                key_padding_mask=memory_key_padding_mask,
-                need_weights=False,  # Optimization: Don't compute attention weights
-            )[0]
+            tmp_tgt = _attend(self.multihead_attn, tgt_last_tok, memory)
             tgt_last_tok = tgt_last_tok + self.dropout2(tmp_tgt)
             tgt_last_tok = self.norm2(tgt_last_tok)
 
