@@ -10,6 +10,20 @@ LOG_LEVEL = logging.INFO
 # LOG_LEVEL = logging.DEBUG
 
 
+# Column-band consistency check (step 8.b). A pdf cell contributes to a column's
+# x band when exactly one candidate table cell scores at least
+# BAND_MATCH_MIN_SCORE for it. A pdf cell is moved when at most
+# BAND_OUTSIDE_MAX_COVERAGE of it lies in its own column's band and more than
+# BAND_INSIDE_MIN_COVERAGE of it lies in another column's band, both relative
+# to the narrower of the pdf cell and the band.
+# A moved pdf cell changes the bands, so the check runs again, at most
+# BAND_MAX_PASSES times, until nothing moves.
+BAND_MATCH_MIN_SCORE = 0.5
+BAND_OUTSIDE_MAX_COVERAGE = 0.2
+BAND_INSIDE_MIN_COVERAGE = 0.8
+BAND_MAX_PASSES = 3
+
+
 class MatchingPostProcessor:
     r"""
     The MatchingPostProcessor aims to improve the matchings between the predicted table cells and
@@ -712,6 +726,295 @@ class MatchingPostProcessor:
 
         return new_matches
 
+    def _column_band_contributions(self, table_cells, pdf_cells, candidate_matches):
+        r"""
+        Collect, per structural column, the x extents of the pdf cells whose
+        placement is unambiguous: exactly one candidate table cell with a
+        score of at least BAND_MATCH_MIN_SCORE. A pdf cell that two predicted
+        bboxes claim (duplicate boxes), or that only a weak box touches, says
+        nothing reliable about where its column is and is left out.
+
+        Parameters
+        ----------
+        table_cells : list of dict
+            Each value is a dictionary with keys: "cell_id", "row_id", "column_id", "bbox", "label"
+        pdf_cells : list of dict
+            List of PDF cells as defined by Docling
+        candidate_matches : dictionary of lists of table_cells
+            All candidate matches per pdf cell, as produced by the intersection
+            match in step 5 and de-duplicated in step 7
+
+        Returns
+        -------
+        contributions : dict
+            column_id -> list of (row_id, x1, x2), one entry per unambiguous
+            pdf cell. Cells with a colspan are skipped: they legitimately sit
+            outside the band of any one column. Rows whose columns are not in
+            left-to-right order are skipped as a whole: the model sometimes
+            emits the cells of a row in the wrong order (typically the row
+            header as the last cell), and such a row cannot vouch for where
+            any column is.
+        """
+        cell_by_id = {cell["cell_id"]: cell for cell in table_cells}
+        pdf_by_id = {str(pdf_cell["id"]): pdf_cell for pdf_cell in pdf_cells}
+        # row_id -> column_id -> [(x1, x2)] of the row's unambiguous pdf cells
+        per_row: dict[int, dict[int, list[tuple[float, float]]]] = {}
+        for pdf_cell_id, match_list in candidate_matches.items():
+            pdf_cell = pdf_by_id.get(str(pdf_cell_id))
+            if pdf_cell is None:
+                continue
+            strong = [
+                match
+                for match in match_list
+                if match.get("iopdf", match.get("iou", 0.0)) >= BAND_MATCH_MIN_SCORE
+            ]
+            if len(strong) != 1:
+                continue
+            cell = cell_by_id.get(strong[0]["table_cell_id"])
+            if cell is None or "colspan_val" in cell:
+                continue
+            per_row.setdefault(cell["row_id"], {}).setdefault(
+                cell["column_id"], []
+            ).append((pdf_cell["bbox"][0], pdf_cell["bbox"][2]))
+
+        contributions: dict[int, list[tuple[int, float, float]]] = {}
+        for row_id, columns in per_row.items():
+            lefts = [
+                min(x1 for x1, _ in columns[column_id]) for column_id in sorted(columns)
+            ]
+            if any(right <= left for left, right in zip(lefts, lefts[1:])):
+                self._log().debug(
+                    "row %s is not in column order, it builds no column band",
+                    row_id,
+                )
+                continue
+            for column_id, extents in columns.items():
+                for x1, x2 in extents:
+                    contributions.setdefault(column_id, []).append((row_id, x1, x2))
+        return contributions
+
+    @staticmethod
+    def _band_coverage(contributions, skip_row_id, x1, x2):
+        r"""
+        How much of the x range [x1, x2] lies inside the band spanned by the
+        contributions of a column, leaving out the contributions of one row
+        (the row of the pdf cell under test, so that a misplaced pdf cell
+        never vouches for itself).
+
+        The overlap is taken relative to the narrower of the two, the x range
+        or the band: a column whose other rows hold one-digit numbers has a
+        band narrower than a two-digit number of the same column, and that
+        number still lies fully "in" the column.
+
+        Returns None when no other row contributes, so the caller can tell
+        "no band" apart from "outside the band".
+        """
+        band_x1 = None
+        band_x2 = None
+        for row_id, c_x1, c_x2 in contributions:
+            if row_id == skip_row_id:
+                continue
+            band_x1 = c_x1 if band_x1 is None else min(band_x1, c_x1)
+            band_x2 = c_x2 if band_x2 is None else max(band_x2, c_x2)
+        if band_x1 is None or band_x2 is None:
+            return None
+        width = min(x2 - x1, band_x2 - band_x1)
+        if width <= 0:
+            return None
+        overlap = min(x2, band_x2) - max(x1, band_x1)
+        return max(0.0, overlap) / width
+
+    def _reassign_by_column_band(
+        self, table_cells, pdf_cells, final_matches, candidate_matches
+    ):
+        r"""
+        8.b. step
+
+        Move a pdf cell out of a table cell whose column cannot contain it.
+
+        The final assignment follows the predicted bboxes alone. When the model
+        shifts one bbox into the neighbouring column, or predicts two bboxes on
+        the same spot, a pdf cell ends up in a column that no other row would
+        put it in. This step checks every assigned pdf cell against the x band
+        of its column, built from the unambiguous pdf cells of the OTHER rows,
+        and against the bands of the other columns. A pdf cell that lies
+        outside its own band and inside another column's band is re-assigned
+        to the table cell of that column in the same row. When that slot has
+        no table cell the match is dropped, which makes the pdf cell an orphan
+        for step 9 to place by the same bands.
+
+        Moves are applied per row, all or nothing: when a pdf cell of a row
+        lies outside its own band and no other column's band can take it,
+        the row shows an inconsistency this step cannot resolve, and none of
+        its cells move. A partial repair would only create new merges.
+
+        A misplaced pdf cell can vouch for another misplaced pdf cell of the
+        same column (the model tends to shift whole rows), so after a pass
+        with moves the bands are rebuilt from the moved matches and the check
+        runs again, up to BAND_MAX_PASSES times.
+
+        Parameters
+        ----------
+        table_cells : list of dict
+            Each value is a dictionary with keys: "cell_id", "row_id", "column_id", "bbox", "label"
+        pdf_cells : list of dict
+            List of PDF cells as defined by Docling
+        final_matches : dictionary of lists of table_cells
+            Final matches, one table cell per pdf cell
+        candidate_matches : dictionary of lists of table_cells
+            All candidate matches per pdf cell, used to build the column bands
+
+        Returns
+        -------
+        new_matches : dictionary of lists of table_cells
+            Matches with the column-inconsistent pdf cells moved or detached
+        """
+        cell_by_id = {cell["cell_id"]: cell for cell in table_cells}
+        pdf_by_id = {str(pdf_cell["id"]): pdf_cell for pdf_cell in pdf_cells}
+        candidates = dict(candidate_matches)
+        new_matches = dict(final_matches)
+        for _ in range(BAND_MAX_PASSES):
+            moved = self._reassign_by_column_band_pass(
+                table_cells, cell_by_id, pdf_by_id, new_matches, candidates
+            )
+            if not moved:
+                break
+        return new_matches
+
+    def _reassign_by_column_band_pass(
+        self, table_cells, cell_by_id, pdf_by_id, new_matches, candidates
+    ):
+        r"""
+        One pass of step 8.b over ``new_matches``, updated in place together
+        with ``candidates`` (a moved pdf cell now has its new cell as its only
+        candidate, a detached one has none). Returns True when something moved.
+        """
+        contributions = self._column_band_contributions(
+            table_cells, list(pdf_by_id.values()), candidates
+        )
+        # First decide for every pdf cell, then apply row by row: a row with a
+        # pdf cell that fits no column keeps all its cells where they are.
+        plans: dict[int, list] = {}
+        stuck_rows: set[int] = set()
+        for pdf_cell_id, match_list in new_matches.items():
+            if len(match_list) != 1:
+                continue
+            match = match_list[0]
+            cell = cell_by_id.get(match["table_cell_id"])
+            pdf_cell = pdf_by_id.get(str(pdf_cell_id))
+            if cell is None or pdf_cell is None or "colspan_val" in cell:
+                continue
+            x1, _, x2, _ = pdf_cell["bbox"]
+            row_id = cell["row_id"]
+            own_col = cell["column_id"]
+            own = self._band_coverage(contributions.get(own_col, []), row_id, x1, x2)
+            if own is None or own >= BAND_OUTSIDE_MAX_COVERAGE:
+                continue
+            best_col = None
+            best = BAND_INSIDE_MIN_COVERAGE
+            for col, col_contributions in contributions.items():
+                if col == own_col:
+                    continue
+                coverage = self._band_coverage(col_contributions, row_id, x1, x2)
+                if coverage is not None and coverage > best:
+                    best_col, best = col, coverage
+            if best_col is None:
+                self._log().debug(
+                    "pdf cell %s %r lies outside col=%s (band coverage %.2f) and "
+                    "fits no other column: row %s is left as predicted",
+                    pdf_cell_id,
+                    pdf_cell["text"],
+                    own_col,
+                    own,
+                    row_id,
+                )
+                stuck_rows.add(row_id)
+                continue
+            plans.setdefault(row_id, []).append(
+                (pdf_cell_id, match, cell, pdf_cell, own, best_col, best)
+            )
+
+        moved = False
+        for row_id, row_plans in plans.items():
+            if row_id in stuck_rows:
+                continue
+            for pdf_cell_id, match, cell, pdf_cell, own, best_col, best in row_plans:
+                moved = True
+                self._apply_band_move(
+                    table_cells,
+                    new_matches,
+                    candidates,
+                    pdf_cell_id,
+                    match,
+                    cell,
+                    pdf_cell,
+                    own,
+                    best_col,
+                    best,
+                )
+        return moved
+
+    def _apply_band_move(
+        self,
+        table_cells,
+        new_matches,
+        candidates,
+        pdf_cell_id,
+        match,
+        cell,
+        pdf_cell,
+        own,
+        best_col,
+        best,
+    ):
+        r"""
+        Move one pdf cell to the table cell of ``best_col`` in its row, or
+        detach it when that row has no table cell there.
+        """
+        row_id = cell["row_id"]
+        own_col = cell["column_id"]
+        target = next(
+            (
+                tc
+                for tc in table_cells
+                if tc["row_id"] == row_id
+                and tc["column_id"] == best_col
+                and "colspan_val" not in tc
+            ),
+            None,
+        )
+        if target is None:
+            self._log().debug(
+                "pdf cell %s %r left col=%s (band coverage %.2f) for col=%s "
+                "(band coverage %.2f): no table cell in row %s, re-placed as orphan",
+                pdf_cell_id,
+                pdf_cell["text"],
+                own_col,
+                own,
+                best_col,
+                best,
+                row_id,
+            )
+            del new_matches[pdf_cell_id]
+            candidates.pop(pdf_cell_id, None)
+            return
+        self._log().debug(
+            "pdf cell %s %r moved col=%s (band coverage %.2f) -> col=%s "
+            "(band coverage %.2f) in row %s",
+            pdf_cell_id,
+            pdf_cell["text"],
+            own_col,
+            own,
+            best_col,
+            best,
+            row_id,
+        )
+        score = match.get("iopdf", match.get("iou", 0.0))
+        new_matches[pdf_cell_id] = [
+            {"table_cell_id": target["cell_id"], "iopdf": score, "band": best}
+        ]
+        candidates[pdf_cell_id] = new_matches[pdf_cell_id]
+
     def _merge_two_bboxes(self, bbox1, bbox2):
         r"""
         Merge two bboxes into one bboxes that encompasses the two
@@ -1312,6 +1615,9 @@ class MatchingPostProcessor:
         #       but each PDF cell has to be asigned to one Table cell
         #     Rule: Do not discard table bboxes at this point, asign all of them
         #   +8.a. Align table cell bboxes with matched pdf cells bboxes (instead of step 6)
+        #   +8.b. Re-assign pdf cells that lie outside their column's x band
+        #         (built from the unambiguous cells of the other rows)
+        #         and inside another column's band
 
         # +9. Pick up remaining orphan cells
         #   +9.a. Determine row banding per row (min/max Y per row)
@@ -1437,6 +1743,11 @@ class MatchingPostProcessor:
         # and final assigment is done only on IOC matches
         final_matches = self._do_final_asignment(
             dedupl_table_cells, matches, dedupl_matches
+        )
+
+        # 8.b. Move pdf cells that landed in a column no other row would put them in
+        final_matches = self._reassign_by_column_band(
+            dedupl_table_cells, pdf_cells, final_matches, dedupl_matches
         )
 
         # 8.a. Re-align bboxes / re-run matching
