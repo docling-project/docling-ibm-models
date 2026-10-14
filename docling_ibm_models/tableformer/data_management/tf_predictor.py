@@ -616,6 +616,7 @@ class TFPredictor:
         image_batch = self._prepare_image(table_image)
         # Make predictions
         prediction = {}
+        tag_scores = None
 
         with torch.no_grad():
             # Compute predictions
@@ -625,8 +626,10 @@ class TFPredictor:
                 prediction["bboxes"] = eval_res_preds["bboxes"]
                 pred_tag_seq = eval_res_preds["tag_seq"]
             elif self._config["predict"]["bbox"]:
-                pred_tag_seq, outputs_class, outputs_coord = self._model.predict(
-                    image_batch, max_steps, beam_size
+                pred_tag_seq, outputs_class, outputs_coord, tag_scores = (
+                    self._model.predict(
+                        image_batch, max_steps, beam_size, return_tag_scores=True
+                    )
                 )
 
                 if outputs_coord is not None:
@@ -649,8 +652,8 @@ class TFPredictor:
                 if self._remove_padding:
                     pred_tag_seq, _ = u.remove_padding(pred_tag_seq)
             else:
-                pred_tag_seq, _, _ = self._model.predict(
-                    image_batch, max_steps, beam_size
+                pred_tag_seq, _, _, tag_scores = self._model.predict(
+                    image_batch, max_steps, beam_size, return_tag_scores=True
                 )
                 # Check if padding should be removed
                 if self._remove_padding:
@@ -659,6 +662,9 @@ class TFPredictor:
             prediction["tag_seq"] = pred_tag_seq
             prediction["rs_seq"] = self._get_html_tags(pred_tag_seq)
             prediction["html_seq"] = otsl_to_html(prediction["rs_seq"], False)
+            if tag_scores is not None:
+                # Per-tag probabilities, aligned with rs_seq
+                prediction["tag_scores"] = tag_scores[: len(prediction["rs_seq"])]
         # Remove implied padding from bbox predictions,
         # that we added on image pre-processing stage
         self._log().debug("----- rs_seq -----")
@@ -747,6 +753,7 @@ class TFPredictor:
         image_batch = self._prepare_image(table_image)
         # Make predictions
         prediction = {}
+        tag_scores = None
 
         with torch.no_grad():
             # Compute predictions
@@ -756,8 +763,10 @@ class TFPredictor:
                 prediction["bboxes"] = eval_res_preds["bboxes"]
                 pred_tag_seq = eval_res_preds["tag_seq"]
             elif self._config["predict"]["bbox"]:
-                pred_tag_seq, outputs_class, outputs_coord = self._model.predict(
-                    image_batch, max_steps, beam_size
+                pred_tag_seq, outputs_class, outputs_coord, tag_scores = (
+                    self._model.predict(
+                        image_batch, max_steps, beam_size, return_tag_scores=True
+                    )
                 )
 
                 if outputs_coord is not None:
@@ -780,8 +789,8 @@ class TFPredictor:
                 if self._remove_padding:
                     pred_tag_seq, _ = u.remove_padding(pred_tag_seq)
             else:
-                pred_tag_seq, _, _ = self._model.predict(
-                    image_batch, max_steps, beam_size
+                pred_tag_seq, _, _, tag_scores = self._model.predict(
+                    image_batch, max_steps, beam_size, return_tag_scores=True
                 )
                 # Check if padding should be removed
                 if self._remove_padding:
@@ -790,6 +799,9 @@ class TFPredictor:
             prediction["tag_seq"] = pred_tag_seq
             prediction["rs_seq"] = self._get_html_tags(pred_tag_seq)
             prediction["html_seq"] = otsl_to_html(prediction["rs_seq"], False)
+            if tag_scores is not None:
+                # Per-tag probabilities, aligned with rs_seq
+                prediction["tag_scores"] = tag_scores[: len(prediction["rs_seq"])]
         # Remove implied padding from bbox predictions,
         # that we added on image pre-processing stage
         self._log().debug("----- rs_seq -----")

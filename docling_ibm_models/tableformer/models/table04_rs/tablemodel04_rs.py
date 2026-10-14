@@ -107,7 +107,9 @@ class TableModel04_rs(BaseModel, nn.Module):
         bboxm = torch.tensor([new_cx, new_cy, new_w, new_h])
         return bboxm
 
-    def predict(self, imgs, max_steps, k, return_attention=False):
+    def predict(
+        self, imgs, max_steps, k, return_attention=False, return_tag_scores=False
+    ):
         r"""
         Inference.
         The input image must be preprocessed and transformed.
@@ -116,6 +118,8 @@ class TableModel04_rs(BaseModel, nn.Module):
         ----------
         img : tensor FloatTensor - torch.Size([1, 3, 448, 448])
             Input image for the inference
+        return_tag_scores : bool
+            If True, also return the softmax probability of each emitted tag
 
         Returns
         -------
@@ -126,6 +130,9 @@ class TableModel04_rs(BaseModel, nn.Module):
 
         outputs_coord : tensor(x, 4)
             Coords of predicted bboxes. x is the number of bboxes. Each bbox is in [cxcywh] format
+
+        tag_scores : list of float (only if return_tag_scores is True)
+            Probability of each emitted tag, aligned with seq[1:]
         """
         AggProfiler().begin("predict_total", self._prof)
 
@@ -162,6 +169,7 @@ class TableModel04_rs(BaseModel, nn.Module):
             torch.LongTensor([word_map["<start>"]]).to(self._device).unsqueeze(1)
         )
         output_tags = []
+        tag_scores = []
         cache = None
         tag_H_buf = []
 
@@ -205,6 +213,10 @@ class TableModel04_rs(BaseModel, nn.Module):
             if prev_tag_ucel:
                 if new_tag == word_map["lcel"]:
                     new_tag = word_map["fcel"]
+
+            # Probability of the tag actually emitted (after correction)
+            if return_tag_scores:
+                tag_scores.append(torch.softmax(logits, dim=1)[0, new_tag].item())
 
             # End of generation
             if new_tag == word_map["<end>"]:
@@ -325,4 +337,6 @@ class TableModel04_rs(BaseModel, nn.Module):
         self._log().info(
             "OTSL predicted table cells#: {}; rows#: {}".format(num_tab_cells, num_rows)
         )
+        if return_tag_scores:
+            return seq, outputs_class, outputs_coord, tag_scores
         return seq, outputs_class, outputs_coord

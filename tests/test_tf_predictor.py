@@ -493,6 +493,11 @@ def test_tf_predictor(init):
                     tf_responses, list
                 ), " Wrong response type. It should be a list"
 
+                prediction = predict_details["prediction"]
+                tag_scores = prediction["tag_scores"]
+                assert len(tag_scores) == len(prediction["rs_seq"])
+                assert all(0.0 <= s <= 1.0 for s in tag_scores)
+
                 img = Image.open(iocr_page["png_image_fn"])
                 img1 = ImageDraw.Draw(img)
 
