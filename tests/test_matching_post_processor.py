@@ -28,14 +28,38 @@ def test_orphan_with_no_col_band_match_is_recovered_to_nearest_column():
     # The orphan pdf cell sits in row 1's y-band but its x=560 is outside
     # both column x-bands — exactly the silent-drop case.
     table_cells = [
-        {"cell_id": 0, "row_id": 0, "column_id": 0, "label": "body",
-         "cell_class": 2, "bbox": [10, 10, 90, 25]},
-        {"cell_id": 1, "row_id": 0, "column_id": 1, "label": "body",
-         "cell_class": 2, "bbox": [110, 10, 200, 25]},
-        {"cell_id": 2, "row_id": 1, "column_id": 0, "label": "body",
-         "cell_class": 2, "bbox": [10, 30, 90, 45]},
-        {"cell_id": 3, "row_id": 1, "column_id": 1, "label": "body",
-         "cell_class": 2, "bbox": [110, 30, 200, 45]},
+        {
+            "cell_id": 0,
+            "row_id": 0,
+            "column_id": 0,
+            "label": "body",
+            "cell_class": 2,
+            "bbox": [10, 10, 90, 25],
+        },
+        {
+            "cell_id": 1,
+            "row_id": 0,
+            "column_id": 1,
+            "label": "body",
+            "cell_class": 2,
+            "bbox": [110, 10, 200, 25],
+        },
+        {
+            "cell_id": 2,
+            "row_id": 1,
+            "column_id": 0,
+            "label": "body",
+            "cell_class": 2,
+            "bbox": [10, 30, 90, 45],
+        },
+        {
+            "cell_id": 3,
+            "row_id": 1,
+            "column_id": 1,
+            "label": "body",
+            "cell_class": 2,
+            "bbox": [110, 30, 200, 45],
+        },
     ]
     pdf_cells = [
         # In row 1's y band (30..45) but x=560 — outside col 0 (10..90)
@@ -80,14 +104,38 @@ def test_band_matched_orphans_use_normal_path():
     # Two rows of body cells. Orphan pdf cell sits in row 1's y-band AND
     # within column 0's x-band — the existing happy path.
     table_cells = [
-        {"cell_id": 0, "row_id": 0, "column_id": 0, "label": "body",
-         "cell_class": 2, "bbox": [10, 10, 90, 25]},
-        {"cell_id": 1, "row_id": 0, "column_id": 1, "label": "body",
-         "cell_class": 2, "bbox": [110, 10, 200, 25]},
-        {"cell_id": 2, "row_id": 1, "column_id": 0, "label": "body",
-         "cell_class": 2, "bbox": [10, 30, 90, 45]},
-        {"cell_id": 3, "row_id": 1, "column_id": 1, "label": "body",
-         "cell_class": 2, "bbox": [110, 30, 200, 45]},
+        {
+            "cell_id": 0,
+            "row_id": 0,
+            "column_id": 0,
+            "label": "body",
+            "cell_class": 2,
+            "bbox": [10, 10, 90, 25],
+        },
+        {
+            "cell_id": 1,
+            "row_id": 0,
+            "column_id": 1,
+            "label": "body",
+            "cell_class": 2,
+            "bbox": [110, 10, 200, 25],
+        },
+        {
+            "cell_id": 2,
+            "row_id": 1,
+            "column_id": 0,
+            "label": "body",
+            "cell_class": 2,
+            "bbox": [10, 30, 90, 45],
+        },
+        {
+            "cell_id": 3,
+            "row_id": 1,
+            "column_id": 1,
+            "label": "body",
+            "cell_class": 2,
+            "bbox": [110, 30, 200, 45],
+        },
     ]
     pdf_cells = [
         # In col 0's x-band (10..90) AND row 1's y-band (30..45).
@@ -95,12 +143,18 @@ def test_band_matched_orphans_use_normal_path():
     ]
     matches: dict = {}
     new_matches, new_table_cells, _ = proc._pick_orphan_cells(
-        tab_rows=2, tab_cols=2, max_cell_id=3,
-        table_cells=table_cells, pdf_cells=pdf_cells, matches=matches,
+        tab_rows=2,
+        tab_cols=2,
+        max_cell_id=3,
+        table_cells=table_cells,
+        pdf_cells=pdf_cells,
+        matches=matches,
     )
     assert "7" in new_matches
     assigned = new_matches["7"][0]
-    target = next(tc for tc in new_table_cells if tc["cell_id"] == assigned["table_cell_id"])
+    target = next(
+        tc for tc in new_table_cells if tc["cell_id"] == assigned["table_cell_id"]
+    )
     assert target["column_id"] == 0, "in-band orphan should land in col 0"
     # Normal-path confidence is non-negative.
     assert assigned["post"] >= 0, (

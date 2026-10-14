@@ -86,10 +86,22 @@ def test_orphan_with_column_band_no_row_band_recovered_to_nearest_row(captured_l
     snapped to the nearest row instead of being dropped.
     """
     table_cells = [
-        {"cell_id": 0, "row_id": 0, "column_id": 0, "label": "body",
-         "cell_class": 2, "bbox": [0, 0, 50, 20]},
-        {"cell_id": 1, "row_id": 1, "column_id": 0, "label": "body",
-         "cell_class": 2, "bbox": [0, 30, 50, 50]},
+        {
+            "cell_id": 0,
+            "row_id": 0,
+            "column_id": 0,
+            "label": "body",
+            "cell_class": 2,
+            "bbox": [0, 0, 50, 20],
+        },
+        {
+            "cell_id": 1,
+            "row_id": 1,
+            "column_id": 0,
+            "label": "body",
+            "cell_class": 2,
+            "bbox": [0, 30, 50, 50],
+        },
     ]
     pdf_cells = [
         {"id": 0, "bbox": [0, 30, 50, 50], "text": "matched"},

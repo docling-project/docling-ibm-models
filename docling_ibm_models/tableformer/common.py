@@ -30,13 +30,13 @@ def validate_config(config):
         return True
     if "preparation" not in config:
         return True
-    assert (
-        "max_tag_len" in config["preparation"]
-    ), "Config error: 'preparation.max_tag_len' parameter is missing"
+    assert "max_tag_len" in config["preparation"], (
+        "Config error: 'preparation.max_tag_len' parameter is missing"
+    )
     if "seq_len" in config["model"]:
-        assert (
-            config["model"]["seq_len"] > 0
-        ), "Config error: 'model.seq_len' should be positive"
+        assert config["model"]["seq_len"] > 0, (
+            "Config error: 'model.seq_len' should be positive"
+        )
         assert config["model"]["seq_len"] <= (
             config["preparation"]["max_tag_len"] + 2
         ), "Config error: 'model.seq_len' should be up to 'preparation.max_tag_len' + 2"

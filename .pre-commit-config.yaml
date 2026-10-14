@@ -1,26 +1,39 @@
 fail_fast: true
+default_stages: [pre-commit]
 repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        files: '^(docling_ibm_models|tests|\.github/scripts)/.*\.py$|^(\.pre-commit-config\.yaml|pyproject\.toml)$'
+      - id: end-of-file-fixer
+        files: '^(docling_ibm_models|tests|\.github/scripts)/.*\.py$|^(\.pre-commit-config\.yaml|pyproject\.toml)$'
+      - id: check-yaml
+        args: [--unsafe]
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=5120]
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.10
+    hooks:
+      - id: ruff
+        name: "Ruff linter"
+        args: [--exit-non-zero-on-fix, --fix, --config=pyproject.toml]
+        files: '^(docling_ibm_models|tests|\.github/scripts)/.*\.(py|ipynb)$'
+      - id: ruff-format
+        name: "Ruff formatter"
+        args: [--config=pyproject.toml]
+        files: '^(docling_ibm_models|tests|\.github/scripts)/.*\.(py|ipynb)$'
   - repo: local
     hooks:
-      - id: black
-        name: Black
-        entry: uv run --no-sync black docling_ibm_models
+      - id: ty
+        name: ty
+        entry: uv run --no-sync ty check
         pass_filenames: false
         language: system
-        files: '\.py$'
-      - id: isort
-        name: isort
-        entry: uv run --no-sync isort docling_ibm_models
-        pass_filenames: false
-        language: system
-        files: '\.py$'
-      - id: system
-        name: MyPy
-        entry: uv run --no-sync mypy docling_ibm_models
-        pass_filenames: false
-        language: system
-        files: '\.py$'
+        files: '^(docling_ibm_models|\.github/scripts)/.*\.py$'
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.7.8
+    rev: 0.12.23
     hooks:
       - id: uv-lock

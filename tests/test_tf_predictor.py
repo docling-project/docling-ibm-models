@@ -3,16 +3,15 @@ import json
 import os
 from pathlib import Path
 
-import torch
-import pytest
 import cv2
-from PIL import Image, ImageDraw
+import pytest
+import torch
 from huggingface_hub import snapshot_download
+from PIL import Image, ImageDraw
 
-from docling_ibm_models.tableformer.utils.app_profiler import AggProfiler
 import docling_ibm_models.tableformer.data_management.tf_predictor as tf_predictor
-from docling_ibm_models.tableformer.data_management.tf_predictor import \
-    TFPredictor
+from docling_ibm_models.tableformer.data_management.tf_predictor import TFPredictor
+from docling_ibm_models.tableformer.utils.app_profiler import AggProfiler
 
 """
 - Implements TF predictor to accept the input format from IOCR, e.g.
@@ -25,17 +24,17 @@ docling_api_data = {
     "table_jsons": [
         "./tests/test_data/samples/ADS.2007.page_123.png_iocr.parse_format.json",
         "./tests/test_data/samples/PHM.2013.page_30.png_iocr.parse_format.json",
-        "./tests/test_data/samples/empty_iocr.png.json"
+        "./tests/test_data/samples/empty_iocr.png.json",
     ],
     "png_images": [
         "./tests/test_data/samples/ADS.2007.page_123.png",
         "./tests/test_data/samples/PHM.2013.page_30.png",
-        "./tests/test_data/samples/empty_iocr.png"
+        "./tests/test_data/samples/empty_iocr.png",
     ],
     "table_bboxes": [
         [[178, 748, 1061, 976], [177, 1163, 1062, 1329]],
         [[100, 186, 1135, 525]],
-        [[178, 748, 1061, 976], [177, 1163, 1062, 1329]]
+        [[178, 748, 1061, 976], [177, 1163, 1062, 1329]],
     ],
 }
 
@@ -100,7 +99,7 @@ test_config = {
         "padding": False,
         "padding_size": 50,
         "disable_post_process": False,
-        "profiling": True
+        "profiling": True,
     },
     "dataset_wordmap": {
         "word_map_tag": {
@@ -422,6 +421,7 @@ def init() -> list[dict]:
         config["model"]["save_dir"] = save_dir
     return configs
 
+
 def test_tf_predictor(init):
     r"""
     Test the TFPredictor
@@ -478,10 +478,10 @@ def test_tf_predictor(init):
 
             multi_tf_output = predictor.multi_table_predict(
                 iocr_page,
-                table_bboxes, 
+                table_bboxes,
                 do_matching=True,
                 correct_overlapping_cells=False,
-                sort_row_col_indexes=True
+                sort_row_col_indexes=True,
             )
 
             # Test output for validity, create visualizations...
@@ -489,9 +489,9 @@ def test_tf_predictor(init):
                 tf_responses = tf_output["tf_responses"]
                 predict_details = tf_output["predict_details"]
                 assert tf_responses is not None, "Empty prediction response"
-                assert isinstance(
-                    tf_responses, list
-                ), " Wrong response type. It should be a list"
+                assert isinstance(tf_responses, list), (
+                    " Wrong response type. It should be a list"
+                )
 
                 img = Image.open(iocr_page["png_image_fn"])
                 img1 = ImageDraw.Draw(img)
@@ -520,18 +520,18 @@ def test_tf_predictor(init):
 
                 # Check the structure of the list items
                 for i, response in enumerate(tf_responses):
-                    assert (
-                        "bbox" in response
-                    ), "bbox field is missing from response: " + str(i)
-                    assert (
-                        "text_cell_bboxes" in response
-                    ), "text_cell_bboxes is missing: " + str(i)
-                    assert (
-                        "row_span" in response
-                    ), "row_span is missing from resp: " + str(i)
-                    assert (
-                        "col_span" in response
-                    ), "col_span is missing from response: " + str(i)
+                    assert "bbox" in response, (
+                        "bbox field is missing from response: " + str(i)
+                    )
+                    assert "text_cell_bboxes" in response, (
+                        "text_cell_bboxes is missing: " + str(i)
+                    )
+                    assert "row_span" in response, (
+                        "row_span is missing from resp: " + str(i)
+                    )
+                    assert "col_span" in response, (
+                        "col_span is missing from response: " + str(i)
+                    )
                     # print("*********** column_header: {}".format(response["column_header"]))
                     if viz:
                         # Visualization:

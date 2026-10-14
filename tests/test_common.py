@@ -3,7 +3,6 @@ import tempfile
 
 import docling_ibm_models.tableformer.common as c
 
-
 test_config_a = {
     "base_dir": "./tests/test_data/",
     "curr_dir": "./tests/test_data/test_common/",
@@ -70,6 +69,7 @@ def test_config_validation():
                 assert val, "Valid configuration didn't pass the validation test"
         except AssertionError:
             assert i == 2, "Configuration validation error"
+
 
 def test_read_config():
     r"""
