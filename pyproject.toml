@@ -32,7 +32,7 @@ requires-python = '>=3.10,<4.0'
 dependencies = [
   'torch (>=2.2.2,<3.0.0)',
   'torchvision (>=0,<1)',
-  'Pillow (>=10.0.0,<13.0.0)',
+  'Pillow (>=10.0.0,<14.0.0)',
   'huggingface_hub (>=0.23,<2)',
   'safetensors[torch] (>=0.4.3,<1)',
   'transformers (>=4.42.0,<6.0.0)',
