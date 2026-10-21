@@ -50,16 +50,19 @@ issues = "https://github.com/docling-project/docling-ibm-models/issues"
 changelog = "https://github.com/docling-project/docling-ibm-models/blob/main/CHANGELOG.md"
 
 [dependency-groups]
-dev = [
-    "opencv-python-headless (>=4.6.0.66,<5.0.0.0)",
-    "pre-commit~=3.7",
-    "mypy~=1.10",
-    "black~=24.4",
-    "isort~=5.10",
-    "autoflake~=2.0",
-    "flake8~=7.1",
-    "flake8-docstrings~=1.6",
+typecheck = [
+    "ty==0.0.33",
     "types-setuptools~=70.3",
+]
+pr-fast-checks = [
+    { include-group = "typecheck" },
+    "ruff==0.16.10",
+]
+dev = [
+    { include-group = "typecheck" },
+    "opencv-python-headless (>=4.6.0.66,<5.0.0.0)",
+    "prek>=0.3.10",
+    "ruff==0.16.10",
     "coverage~=7.6",
     "pytest~=8.3",
     "pytest-cov>=6.1.1",
@@ -80,15 +83,23 @@ conflicts = [
 [tool.setuptools.packages.find]
 include = ["docling_ibm_models*"]
 
-[tool.black]
+[tool.ruff]
+target-version = "py310"
 line-length = 88
-target-version = ["py310"]
-include = '\.pyi?$'
+respect-gitignore = true
 
-[tool.isort]
-profile = "black"
-line_length = 88
-py_version = 310
+[tool.ruff.format]
+skip-magic-trailing-comma = false
+
+[tool.ruff.lint]
+# Keep the scope of the previous black + isort setup: ruff format replaces
+# black, and the isort rules replace isort (profile "black").
+select = [
+  "I", # isort
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["docling_ibm_models"]
 
 [tool.semantic_release]
 # for default values check:
@@ -104,11 +115,20 @@ parser_angular_minor_types = "feat"
 parser_angular_patch_types = "fix,perf"
 
 
-[tool.mypy]
-pretty = true
-no_implicit_optional = true
-python_version = "3.10"
+[tool.ty.rules]
+all = "warn"
 
-[[tool.mypy.overrides]]
-module = ["torchvision.*", "transformers.*"]
-ignore_missing_imports = true
+[tool.ty.environment]
+python-version = "3.10"
+
+[tool.ty.src]
+include = ["docling_ibm_models", ".github/scripts"]
+
+[tool.ty.analysis]
+allowed-unresolved-imports = [
+  "torchvision.**",
+  "transformers.**",
+]
+
+[tool.ty.terminal]
+output-format = "concise"

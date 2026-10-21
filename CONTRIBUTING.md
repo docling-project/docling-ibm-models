@@ -47,21 +47,25 @@ uv add [OPTIONS] <PACKAGES|--requirements <REQUIREMENTS>>
 
 We use the following tools to enforce code style:
 
-- isort, to sort imports
-- Black, to format code
-- [MyPy](https://mypy.readthedocs.io), as static type checker
+- [Ruff](https://docs.astral.sh/ruff/), to format code and sort imports
+- [ty](https://docs.astral.sh/ty/), as static type checker
 
-A set of styling checks, as well as regression tests, are defined and managed through the [pre-commit](https://pre-commit.com/) framework. To ensure that those scripts run automatically before a commit is finalized, install `pre-commit` on your local repository:
+A set of styling checks is defined and managed through [prek](https://github.com/j178/prek), a fast drop-in replacement for the [pre-commit](https://pre-commit.com/) framework. To ensure that those scripts run automatically before a commit is finalized, install the hooks on your local repository:
 
 ```bash
-uv run pre-commit install
+make hooks-install
 ```
 
 To run the checks on-demand, type:
 
 ```bash
-uv run pre-commit run --all-files
+make validate      # hooks on the changed files
+make validate-all  # hooks on all files
+make check         # read-only checks
+make fix           # apply the Ruff formatter and fixers
 ```
 
-Note: Checks like `Black` and `isort` will _fail_ if they modify files. This is because `pre-commit` doesn't like to see files modified by their hooks. In these cases, `git add` the modified files and `git commit` again.
+Note: Checks like the Ruff formatter will _fail_ if they modify files. In these cases, `git add` the modified files and `git commit` again.
+
+Pull requests also run a fast lint and typing check on the changed files. This check does not need a maintainer approval to run.
 

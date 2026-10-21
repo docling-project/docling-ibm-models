@@ -5,23 +5,25 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
+import torchvision.transforms as transforms
 from huggingface_hub import snapshot_download
 from PIL import Image, ImageDraw
 from transformers import AutoTokenizer
-import torchvision.transforms as transforms
 
-from docling_ibm_models.tableformer_v2 import TableFormerV2
 from docling_ibm_models.tableformer.utils.app_profiler import AggProfiler
+from docling_ibm_models.tableformer_v2 import TableFormerV2
 
 TABLEFORMER_V2_REPO_ID = "docling-project/TableFormerV2"
 TABLEFORMER_V2_REVISION = "v0.1.0"
 
+
 def load_tokenizer(path: str, revision: str | None = None):
     """Load tokenizer from local path or HuggingFace repo."""
     import os
+
     from tokenizers import Tokenizer
     from transformers import PreTrainedTokenizerFast
-    
+
     # Check if it's a local path with tokenizer.json
     tokenizer_file = os.path.join(path, "tokenizer.json")
     if os.path.exists(tokenizer_file):
@@ -129,7 +131,9 @@ def test_tableformer_v2_tokenizer_loading(init: dict):
     r"""
     Test that the tokenizer loads correctly
     """
-    tokenizer = load_tokenizer(init["artifact_path"], revision=init["artifact_revision"])
+    tokenizer = load_tokenizer(
+        init["artifact_path"], revision=init["artifact_revision"]
+    )
 
     # Check tokenizer attributes
     assert tokenizer.bos_token_id is not None, "Missing bos_token_id"
@@ -156,16 +160,18 @@ def test_tableformer_v2_image_encoding(init: dict):
     model.eval()
 
     # Prepare transform
-    transform = transforms.Compose([
-        transforms.Resize((init["image_size"], init["image_size"])),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    ])
+    transform = transforms.Compose(
+        [
+            transforms.Resize((init["image_size"], init["image_size"])),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ]
+    )
 
     # Test with first table crop from first image
     img_fn = init["test_data"]["png_images"][0]
     table_bbox = init["test_data"]["table_bboxes"][0][0]  # First table
-    
+
     with Image.open(img_fn) as img:
         img_rgb = img.convert("RGB")
         # Crop to table region
@@ -194,21 +200,25 @@ def test_tableformer_v2_forward_pass(init: dict):
     model = TableFormerV2.from_pretrained(
         init["artifact_path"], revision=init["artifact_revision"]
     )
-    tokenizer = load_tokenizer(init["artifact_path"], revision=init["artifact_revision"])
+    tokenizer = load_tokenizer(
+        init["artifact_path"], revision=init["artifact_revision"]
+    )
     model = model.to(device)
     model.eval()
 
     # Prepare transform
-    transform = transforms.Compose([
-        transforms.Resize((init["image_size"], init["image_size"])),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    ])
+    transform = transforms.Compose(
+        [
+            transforms.Resize((init["image_size"], init["image_size"])),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ]
+    )
 
     # Test with first table crop
     img_fn = init["test_data"]["png_images"][0]
     table_bbox = init["test_data"]["table_bboxes"][0][0]
-    
+
     with Image.open(img_fn) as img:
         img_rgb = img.convert("RGB")
         x1, y1, x2, y2 = table_bbox
@@ -220,14 +230,14 @@ def test_tableformer_v2_forward_pass(init: dict):
 
         with torch.no_grad():
             outputs = model.forward(
-                images=image_tensor,
-                input_ids=input_ids,
-                return_dict=True
+                images=image_tensor, input_ids=input_ids, return_dict=True
             )
 
         assert outputs.logits is not None, "Missing logits"
         assert outputs.hidden_states is not None, "Missing hidden_states"
-        assert outputs.logits.size(-1) == model.config.vocab_size, "Wrong vocab size in logits"
+        assert outputs.logits.size(-1) == model.config.vocab_size, (
+            "Wrong vocab size in logits"
+        )
 
 
 def test_tableformer_v2_predict(init: dict):
@@ -246,23 +256,26 @@ def test_tableformer_v2_predict(init: dict):
     model = TableFormerV2.from_pretrained(
         init["artifact_path"], revision=init["artifact_revision"]
     )
-    tokenizer = load_tokenizer(init["artifact_path"], revision=init["artifact_revision"])
+    tokenizer = load_tokenizer(
+        init["artifact_path"], revision=init["artifact_revision"]
+    )
     model = model.to(device)
     model.eval()
 
     # Prepare transform
-    transform = transforms.Compose([
-        transforms.Resize((init["image_size"], init["image_size"])),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    ])
+    transform = transforms.Compose(
+        [
+            transforms.Resize((init["image_size"], init["image_size"])),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ]
+    )
 
     # Process each page and its tables
-    for img_idx, (img_fn, table_bboxes) in enumerate(zip(
-        init["test_data"]["png_images"],
-        init["test_data"]["table_bboxes"]
-    )):
-        print(f"\n{'>'*40}")
+    for img_idx, (img_fn, table_bboxes) in enumerate(
+        zip(init["test_data"]["png_images"], init["test_data"]["table_bboxes"])
+    ):
+        print(f"\n{'>' * 40}")
         img_basename = os.path.basename(img_fn)
         print(f"Processing image: {img_basename}")
         print(f"Number of tables: {len(table_bboxes)}")
@@ -292,7 +305,7 @@ def test_tableformer_v2_predict(init: dict):
                     output = model.generate(
                         images=image_tensor,
                         tokenizer=tokenizer,
-                        max_length=init["max_length"]
+                        max_length=init["max_length"],
                     )
 
                 # Check output structure
@@ -303,7 +316,9 @@ def test_tableformer_v2_predict(init: dict):
                 assert generated_ids.dim() == 2, "generated_ids should be 2D"
 
                 # Decode OTSL output
-                decoded_text = tokenizer.decode(generated_ids[0], skip_special_tokens=True)
+                decoded_text = tokenizer.decode(
+                    generated_ids[0], skip_special_tokens=True
+                )
                 print(f"  Generated OTSL: {decoded_text[:80]}...")
 
                 # Check bounding boxes
@@ -342,11 +357,13 @@ def test_tableformer_v2_predict(init: dict):
                         draw.rectangle([bx1, by1, bx2, by2], outline="red", width=2)
 
                     # Also draw table bbox on full page for context
-                    draw.rectangle([0, 0, crop_w-1, crop_h-1], outline="blue", width=3)
+                    draw.rectangle(
+                        [0, 0, crop_w - 1, crop_h - 1], outline="blue", width=3
+                    )
 
                     viz_fn = os.path.join(
                         viz_root,
-                        f"tableformer_v2_{img_basename.replace('.png', '')}_table{t_idx}.png"
+                        f"tableformer_v2_{img_basename.replace('.png', '')}_table{t_idx}.png",
                     )
                     draw_img.save(viz_fn)
                     print(f"  Saved visualization: {viz_fn}")
@@ -354,9 +371,9 @@ def test_tableformer_v2_predict(init: dict):
     # Get and print profiling data
     if enable_profiling:
         profiling_data = profiler.get_data()
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("PROFILING DATA")
-        print("="*60)
+        print("=" * 60)
         print(json.dumps(profiling_data, indent=2, sort_keys=True))
 
 
@@ -369,20 +386,24 @@ def test_tableformer_v2_numpy_input(init: dict):
     model = TableFormerV2.from_pretrained(
         init["artifact_path"], revision=init["artifact_revision"]
     )
-    tokenizer = load_tokenizer(init["artifact_path"], revision=init["artifact_revision"])
+    tokenizer = load_tokenizer(
+        init["artifact_path"], revision=init["artifact_revision"]
+    )
     model = model.to(device)
     model.eval()
 
     # Prepare transform
-    transform = transforms.Compose([
-        transforms.Resize((init["image_size"], init["image_size"])),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    ])
+    transform = transforms.Compose(
+        [
+            transforms.Resize((init["image_size"], init["image_size"])),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ]
+    )
 
     img_fn = init["test_data"]["png_images"][0]
     table_bbox = init["test_data"]["table_bboxes"][0][0]
-    
+
     with Image.open(img_fn) as img:
         img_rgb = img.convert("RGB")
         x1, y1, x2, y2 = table_bbox
@@ -395,9 +416,7 @@ def test_tableformer_v2_numpy_input(init: dict):
 
         with torch.no_grad():
             output = model.generate(
-                images=image_tensor,
-                tokenizer=tokenizer,
-                max_length=init["max_length"]
+                images=image_tensor, tokenizer=tokenizer, max_length=init["max_length"]
             )
 
         assert "generated_ids" in output, "Missing generated_ids"
@@ -411,33 +430,38 @@ def test_tableformer_v2_batch_inference(init: dict):
     """
     # Detect device: use GPU if available, otherwise CPU
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"BATCH INFERENCE TEST - Device: {device}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     if device == "cuda":
         print(f"GPU: {torch.cuda.get_device_name(0)}")
         print(f"CUDA Version: {torch.version.cuda}")
-        print(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.2f} GB")
+        print(
+            f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.2f} GB"
+        )
 
     model = TableFormerV2.from_pretrained(
         init["artifact_path"], revision=init["artifact_revision"]
     )
-    tokenizer = load_tokenizer(init["artifact_path"], revision=init["artifact_revision"])
+    tokenizer = load_tokenizer(
+        init["artifact_path"], revision=init["artifact_revision"]
+    )
     model = model.to(device)
     model.eval()
 
     # Prepare transform
-    transform = transforms.Compose([
-        transforms.Resize((init["image_size"], init["image_size"])),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    ])
+    transform = transforms.Compose(
+        [
+            transforms.Resize((init["image_size"], init["image_size"])),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ]
+    )
 
     # Collect table crops from all pages
     image_tensors = []
     for img_fn, table_bboxes in zip(
-        init["test_data"]["png_images"],
-        init["test_data"]["table_bboxes"]
+        init["test_data"]["png_images"], init["test_data"]["table_bboxes"]
     ):
         with Image.open(img_fn) as img:
             img_rgb = img.convert("RGB")
@@ -459,21 +483,20 @@ def test_tableformer_v2_batch_inference(init: dict):
             _ = model.generate(
                 images=batch_tensor,
                 tokenizer=tokenizer,
-                max_length=min(init["max_length"], 100)  # Shorter for warmup
+                max_length=min(init["max_length"], 100),  # Shorter for warmup
             )
         torch.cuda.synchronize() if device == "cuda" else None
 
     # Actual inference with timing
     import time
+
     if device == "cuda":
         torch.cuda.synchronize()
     start_time = time.time()
 
     with torch.no_grad():
         output = model.generate(
-            images=batch_tensor,
-            tokenizer=tokenizer,
-            max_length=init["max_length"]
+            images=batch_tensor, tokenizer=tokenizer, max_length=init["max_length"]
         )
 
     if device == "cuda":
@@ -491,8 +514,8 @@ def test_tableformer_v2_batch_inference(init: dict):
         print(f"  Table {i}: seq_len={seq_len}, {decoded[:50]}...")
 
     print(f"\nInference time: {inference_time:.3f} seconds")
-    print(f"Time per table: {inference_time/batch_size:.3f} seconds")
-    print(f"Throughput: {batch_size/inference_time:.2f} tables/second")
+    print(f"Time per table: {inference_time / batch_size:.3f} seconds")
+    print(f"Throughput: {batch_size / inference_time:.2f} tables/second")
 
     # Check bounding boxes
     pred_bboxes = output.get("predicted_bboxes")
@@ -514,7 +537,9 @@ def test_tableformer_v2_unsupported_input(init: dict):
     model = TableFormerV2.from_pretrained(
         init["artifact_path"], revision=init["artifact_revision"]
     )
-    tokenizer = load_tokenizer(init["artifact_path"], revision=init["artifact_revision"])
+    tokenizer = load_tokenizer(
+        init["artifact_path"], revision=init["artifact_revision"]
+    )
     model = model.to(device)
     model.eval()
 
