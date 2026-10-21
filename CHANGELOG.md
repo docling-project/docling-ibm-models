@@ -1,3 +1,9 @@
+## [v4.0.4](https://github.com/docling-project/docling-ibm-models/releases/tag/v4.0.4) - 2026-10-21
+
+### Fix
+
+* Allow Pillow 13 ([#199](https://github.com/docling-project/docling-ibm-models/issues/199)) ([`a5b1a7f`](https://github.com/docling-project/docling-ibm-models/commit/a5b1a7f210c0b1724ae3b01bfbed600c6231e86e))
+
 ## [v4.0.3](https://github.com/docling-project/docling-ibm-models/releases/tag/v4.0.3) - 2026-09-18
 
 ### Fix
