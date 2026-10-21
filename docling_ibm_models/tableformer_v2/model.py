@@ -677,6 +677,8 @@ class TableFormerV2(PreTrainedModel, GenerationMixin):
         past_key_values: Optional[Tuple] = None,
         use_cache: Optional[bool] = None,
         return_dict: bool = True,
+        *,
+        predict_bboxes: bool = True,
     ) -> TableFormerV2Output:
         r"""
         Forward pass for inference.
@@ -697,6 +699,9 @@ class TableFormerV2(PreTrainedModel, GenerationMixin):
             Whether to use KV caching (default: True)
         return_dict : bool
             Whether to return a ModelOutput (default: True)
+        predict_bboxes : bool
+            Whether to predict bounding boxes (default: True). Token generation
+            disables this because it only consumes logits and cached states.
 
         Returns
         -------
@@ -757,25 +762,27 @@ class TableFormerV2(PreTrainedModel, GenerationMixin):
         if prof_enabled:
             AggProfiler().end("model_tag_transformer_fc", prof_enabled)
 
-        # Identify cell positions and predict bboxes
-        cell_mask = torch.zeros_like(input_ids, dtype=torch.bool)
-        for cell_id in self.data_cells:
-            cell_mask |= input_ids == cell_id
+        pred_bboxes = None
+        if predict_bboxes:
+            # Identify cell positions and predict bboxes.
+            cell_mask = torch.zeros_like(input_ids, dtype=torch.bool)
+            for cell_id in self.data_cells:
+                cell_mask |= input_ids == cell_id
 
-        cell_positions = torch.nonzero(cell_mask, as_tuple=False)
-        cell_embeddings = decoded[cell_mask]
-        cell_batch_indices = (
-            cell_positions[:, 0]
-            if cell_positions.numel() > 0
-            else cell_positions.new_empty(0)
-        )
+            cell_positions = torch.nonzero(cell_mask, as_tuple=False)
+            cell_embeddings = decoded[cell_mask]
+            cell_batch_indices = (
+                cell_positions[:, 0]
+                if cell_positions.numel() > 0
+                else cell_positions.new_empty(0)
+            )
 
-        pred_bboxes = self.bbox_head(
-            cell_embeddings,
-            encoder_outputs["last_hidden_state"],
-            cell_batch_indices,
-            spatial_size=encoder_outputs.get("spatial_size", None),
-        )
+            pred_bboxes = self.bbox_head(
+                cell_embeddings,
+                encoder_outputs["last_hidden_state"],
+                cell_batch_indices,
+                spatial_size=encoder_outputs.get("spatial_size", None),
+            )
 
         if not return_dict:
             return (logits, decoded, pred_bboxes, present_kv)  # type: ignore[return-value]
@@ -861,6 +868,7 @@ class TableFormerV2(PreTrainedModel, GenerationMixin):
                     past_key_values=past_key_values,
                     use_cache=True,
                     return_dict=True,
+                    predict_bboxes=False,
                 )
 
                 if outputs.logits is None:
@@ -881,6 +889,7 @@ class TableFormerV2(PreTrainedModel, GenerationMixin):
                 past_key_values=None,
                 use_cache=False,
                 return_dict=True,
+                predict_bboxes=False,
             )
             hidden_states = final_outputs.hidden_states
 
