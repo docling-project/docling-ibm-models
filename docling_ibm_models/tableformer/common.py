@@ -9,7 +9,7 @@ import docling_ibm_models.tableformer.settings as s
 from docling_ibm_models.tableformer.models.common.base_model import BaseModel
 
 LOG_LEVEL = logging.DEBUG
-logger = s.get_custom_logger("common", LOG_LEVEL)
+logger = s.get_custom_logger(__name__, LOG_LEVEL)
 
 
 def validate_config(config):
