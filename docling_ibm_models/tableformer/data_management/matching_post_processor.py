@@ -111,6 +111,47 @@ class MatchingPostProcessor:
 
         return good_table_cells, bad_table_cells
 
+    def _split_sole_matched_cells(self, cells, matches):
+        r"""
+        4.b. step
+        Split the bad cells of a column without good cells into the cells that
+        are the only match of a pdf cell and the rest.
+
+        Such a column has no median position to move its cells to. A pdf cell
+        that only this column overlaps most likely holds text the image does
+        not show, such as a glyph the page render left out, so its cell keeps
+        its place.
+
+        Parameters
+        ----------
+        cells : list of dict
+            Bad cells of a column
+            Each value is a dictionary with keys: "cell_id", "row_id", "column_id", "bbox", "label"
+        matches : dictionary of lists of table_cells
+            A dictionary which is indexed by the pdf_cell_id as key and the value is a list
+            of the table_cells that fall inside that pdf cell
+
+        Returns
+        -------
+        kept_cells : list of dict
+            cells that are the only match of at least one pdf cell
+        other_cells : list of dict
+            the remaining cells
+        """
+        sole_cell_ids = {
+            match_list[0]["table_cell_id"]
+            for match_list in matches.values()
+            if len(match_list) == 1
+        }
+        kept_cells = []
+        other_cells = []
+        for cell in cells:
+            if cell["cell_id"] in sole_cell_ids:
+                kept_cells.append(cell)
+            else:
+                other_cells.append(cell)
+        return kept_cells, other_cells
+
     def _delete_column_from_table(self, table_cells, column):
         r"""
         1.a. step
@@ -1298,6 +1339,8 @@ class MatchingPostProcessor:
         #         for good IOU cells, get median* cell size in a column.
         # +4. Move bad cells to the median* (left/middle/right) good in a column
         #   +4.a. (Additionally), re-size cell to median* size of cells in a column
+        #   +4.b. If a column has no good cells, keep in place the cells
+        #         that are the only match of a pdf cell
         # +5. Generate new matches, run Intersection over cell(pdf) on a table cells
 
         # NOT USED +6. Align table cell bboxes with good matches
@@ -1397,6 +1440,13 @@ class MatchingPostProcessor:
             median_width = gm3
             median_height = gm4
             self._log().debug("Median good X = {}".format(median_x))
+
+            # 4.b. Without good cells there is no median to move to
+            if not good_table_cells:
+                kept_cells, bad_table_cells = self._split_sole_matched_cells(
+                    bad_table_cells, matches
+                )
+                fixed_table_cells.extend(kept_cells)
 
             # 4. Move bad cells to the median* (left/middle/right) good in a column
             # nc = self._move_cells_to_left_pos(bad_table_cells, median_x, True,
