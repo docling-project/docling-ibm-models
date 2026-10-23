@@ -39,7 +39,6 @@ from docling_ibm_models.tableformer.utils.app_profiler import AggProfiler
 KVCache = Tuple[torch.Tensor, torch.Tensor]
 
 
-
 @dataclass
 class TableFormerV2Output(ModelOutput):
     r"""
