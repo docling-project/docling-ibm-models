@@ -35,7 +35,6 @@ from docling_ibm_models.tableformer.utils.app_profiler import AggProfiler
 # Custom Output Classes
 # =============================================================================
 
-# Let's make a KVCache type hint
 KVCache = Tuple[torch.Tensor, torch.Tensor]
 
 
