@@ -11,6 +11,7 @@ Architecture overview:
 - Bbox head: Multi-layer attention decoder for cell bounding box prediction
 """
 
+import copy
 import logging
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
@@ -21,10 +22,12 @@ from torchvision.models import efficientnet_v2_s
 from transformers import (
     AutoConfig,
     AutoModel,
+    GenerationConfig,
     GenerationMixin,
     PretrainedConfig,
     PreTrainedModel,
 )
+from transformers.generation.logits_process import LogitsProcessorList
 from transformers.modeling_outputs import ModelOutput
 
 _log = logging.getLogger(__name__)
@@ -808,7 +811,8 @@ class TableFormerV2(PreTrainedModel, GenerationMixin):
         images: torch.Tensor,
         tokenizer,
         max_length: int = 512,
-        generation_config=None,
+        generation_config: Optional[GenerationConfig] = None,
+        logits_processor: Optional[LogitsProcessorList] = None,
         **kwargs,
     ) -> dict:
         r"""
@@ -824,6 +828,8 @@ class TableFormerV2(PreTrainedModel, GenerationMixin):
             Maximum sequence length (default: 512)
         generation_config : GenerationConfig, optional
             HuggingFace generation configuration
+        logits_processor : LogitsProcessorList, optional
+            Custom logits processors applied to next-token predictions
 
         Returns
         -------
@@ -832,8 +838,42 @@ class TableFormerV2(PreTrainedModel, GenerationMixin):
             - generated_ids: (B, L) token IDs
             - predicted_bboxes: (B, num_cells, 4) bboxes in xyxy [0, 1]
         """
-        if generation_config is not None and hasattr(generation_config, "max_length"):
+        if generation_config is None:
+            if (
+                hasattr(self, "generation_config")
+                and self.generation_config is not None
+            ):
+                generation_config = copy.deepcopy(self.generation_config)
+            else:
+                generation_config = GenerationConfig()
+            generation_config.max_length = max_length
+        elif max_length != 512:
+            generation_config.max_length = max_length
+
+        for key in list(kwargs.keys()):
+            if hasattr(generation_config, key):
+                setattr(generation_config, key, kwargs.pop(key))
+
+        if (
+            hasattr(generation_config, "max_length")
+            and generation_config.max_length is not None
+        ):
             max_length = generation_config.max_length
+
+        # Ensure max_length does not exceed positional encoding capacity
+        pos_enc_size = self.positional_encoding.size(1)
+        max_length = min(max_length, pos_enc_size)
+
+        if logits_processor is None:
+            logits_processor = LogitsProcessorList()
+
+        logits_processor = self._get_logits_processor(
+            generation_config=generation_config,
+            input_ids_seq_length=1,
+            encoder_input_ids=None,
+            prefix_allowed_tokens_fn=None,
+            logits_processor=logits_processor,
+        )
 
         prof_enabled = self._is_profiling_enabled()
         if prof_enabled:
@@ -853,7 +893,8 @@ class TableFormerV2(PreTrainedModel, GenerationMixin):
             past_key_values = None
 
             # Autoregressive generation loop
-            for step in range(max_length):
+            max_new_tokens = max(0, max_length - generated_ids.shape[1])
+            for step in range(max_new_tokens):
                 outputs = self.forward(
                     input_ids=current_input,
                     attention_mask=None,
@@ -865,7 +906,13 @@ class TableFormerV2(PreTrainedModel, GenerationMixin):
 
                 if outputs.logits is None:
                     raise ValueError("Model forward pass returned None logits")
-                next_token = outputs.logits[:, -1, :].argmax(dim=-1, keepdim=True)
+                next_token_logits = outputs.logits[:, -1, :]
+                if logits_processor is not None and len(logits_processor) > 0:
+                    next_token_logits = logits_processor(
+                        generated_ids, next_token_logits
+                    )
+
+                next_token = next_token_logits.argmax(dim=-1, keepdim=True)
                 generated_ids = torch.cat([generated_ids, next_token], dim=1)
                 past_key_values = outputs.past_key_values
                 current_input = next_token

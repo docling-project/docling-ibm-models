@@ -552,3 +552,73 @@ def test_tableformer_v2_unsupported_input(init: dict):
     except Exception:
         is_exception = True
     assert is_exception, "Should raise exception for wrong input shape"
+
+
+def test_tableformer_v2_generation_logits_processor_and_max_length(init: dict):
+    r"""
+    Test that max_length is strictly respected (no off-by-one overflow beyond max_length)
+    and logits_processor / repetition_penalty are accepted and applied.
+    """
+    from transformers import LogitsProcessorList, RepetitionPenaltyLogitsProcessor
+
+    device = "cpu"
+    model = TableFormerV2.from_pretrained(
+        init["artifact_path"], revision=init["artifact_revision"]
+    )
+    tokenizer = load_tokenizer(
+        init["artifact_path"], revision=init["artifact_revision"]
+    )
+    model = model.to(device)
+    model.eval()
+
+    transform = transforms.Compose(
+        [
+            transforms.Resize((init["image_size"], init["image_size"])),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ]
+    )
+
+    img_fn = init["test_data"]["png_images"][0]
+    table_bbox = init["test_data"]["table_bboxes"][0][0]
+
+    with Image.open(img_fn) as img:
+        img_rgb = img.convert("RGB")
+        x1, y1, x2, y2 = table_bbox
+        table_crop = img_rgb.crop((x1, y1, x2, y2))
+        image_tensor = transform(table_crop).unsqueeze(0).to(device)
+
+    # 1. Test bounded max_length (e.g., max_length=15 must yield exactly <= 15 tokens)
+    short_max_length = 15
+    with torch.no_grad():
+        output = model.generate(
+            images=image_tensor,
+            tokenizer=tokenizer,
+            max_length=short_max_length,
+        )
+    assert output["generated_ids"].shape[1] <= short_max_length, (
+        f"Generated sequence length {output['generated_ids'].shape[1]} exceeded max_length {short_max_length}"
+    )
+
+    # 2. Test repetition_penalty kwarg is wired through GenerationConfig
+    with torch.no_grad():
+        output_penalized = model.generate(
+            images=image_tensor,
+            tokenizer=tokenizer,
+            max_length=short_max_length,
+            repetition_penalty=1.5,
+        )
+    assert output_penalized["generated_ids"].shape[1] <= short_max_length
+
+    # 3. Test explicit logits_processor argument
+    custom_processor = LogitsProcessorList(
+        [RepetitionPenaltyLogitsProcessor(penalty=1.2)]
+    )
+    with torch.no_grad():
+        output_custom = model.generate(
+            images=image_tensor,
+            tokenizer=tokenizer,
+            max_length=short_max_length,
+            logits_processor=custom_processor,
+        )
+    assert output_custom["generated_ids"].shape[1] <= short_max_length
