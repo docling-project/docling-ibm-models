@@ -233,7 +233,7 @@ class TableModel04_rs(BaseModel, nn.Module):
                     word_map["ucel"],
                 ]:
                     # GENERATE BBOX HERE TOO (All other cases)...
-                    tag_H_buf.append(decoded[-1, :, :])
+                    tag_H_buf.append(decoded[-1, :, :].clone())
                     if first_lcel is not True:
                         # Mark end index for horizontal cell bbox merge
                         bboxes_to_merge[cur_bbox_ind] = bbox_ind
@@ -245,7 +245,7 @@ class TableModel04_rs(BaseModel, nn.Module):
             else:
                 if first_lcel:
                     # GENERATE BBOX HERE (Beginning of horisontal span)...
-                    tag_H_buf.append(decoded[-1, :, :])
+                    tag_H_buf.append(decoded[-1, :, :].clone())
                     first_lcel = False
                     # Mark start index for cell bbox merge
                     cur_bbox_ind = bbox_ind
