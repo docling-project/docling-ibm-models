@@ -428,13 +428,14 @@ class BboxDecoderLayer(nn.Module):
         x = self.self_attn_norm(x + sa_out.squeeze(0))
 
         if cell_batch_indices is None:
-            ca_out, _ = self.cross_attn(x.unsqueeze(1), memory, memory)
+            x_unsq = x.unsqueeze(1)
+            ca_out, _ = self.cross_attn(x_unsq, memory, memory)
             ca_out = ca_out.squeeze(1)
         else:
             ca_out = torch.empty_like(x)
             for image in cell_batch_indices.unique().tolist():
                 cells = cell_batch_indices == image
-                image_memory = memory[image : image + 1]
+                image_memory = memory[image].unsqueeze(0)
                 output, _ = self.cross_attn(
                     x[cells].unsqueeze(0), image_memory, image_memory
                 )
