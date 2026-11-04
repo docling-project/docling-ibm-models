@@ -410,6 +410,7 @@ class BboxDecoderLayer(nn.Module):
         x: torch.Tensor,
         memory: torch.Tensor,
         batch_mask: Optional[torch.Tensor] = None,
+        cell_batch_indices: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         x_unsq = x.unsqueeze(0)
 
@@ -421,9 +422,19 @@ class BboxDecoderLayer(nn.Module):
         sa_out, _ = self.self_attn(x_unsq, x_unsq, x_unsq, attn_mask=attn_mask)
         x = self.self_attn_norm(x + sa_out.squeeze(0))
 
-        x_unsq = x.unsqueeze(1)
-        ca_out, _ = self.cross_attn(x_unsq, memory, memory)
-        x = self.cross_attn_norm(x + ca_out.squeeze(1))
+        if cell_batch_indices is None:
+            ca_out, _ = self.cross_attn(x.unsqueeze(1), memory, memory)
+            ca_out = ca_out.squeeze(1)
+        else:
+            ca_out = torch.empty_like(x)
+            for image in cell_batch_indices.unique().tolist():
+                cells = cell_batch_indices == image
+                image_memory = memory[image : image + 1]
+                output, _ = self.cross_attn(
+                    x[cells].unsqueeze(0), image_memory, image_memory
+                )
+                ca_out[cells] = output.squeeze(0)
+        x = self.cross_attn_norm(x + ca_out)
 
         x = self.ffn_norm(x + self.ffn(x))
         return x
@@ -496,13 +507,12 @@ class BboxHead(nn.Module):
             return cell_embeddings.new_empty(0, 4)
 
         batch_mask = cell_batch_indices.unsqueeze(0) == cell_batch_indices.unsqueeze(1)
-        encoder_for_cells = encoder_hidden[cell_batch_indices]
 
         x = self.input_norm(self.input_proj(cell_embeddings))
-        memory = self.kv_norm(self.kv_proj(encoder_for_cells))
+        memory = self.kv_norm(self.kv_proj(encoder_hidden))
 
         for layer in self.layers:
-            x = layer(x, memory, batch_mask)
+            x = layer(x, memory, batch_mask, cell_batch_indices)
 
         bbox_cxcywh = torch.sigmoid(self.bbox_mlp(x))
         bbox_xyxy = _cxcywh_to_xyxy(bbox_cxcywh)
