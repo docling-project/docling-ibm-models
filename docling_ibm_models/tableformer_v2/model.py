@@ -412,6 +412,11 @@ class BboxDecoderLayer(nn.Module):
         batch_mask: Optional[torch.Tensor] = None,
         cell_batch_indices: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
+        """Decode cells using per-cell or per-image memory.
+
+        Without cell_batch_indices, memory has shape (N, S, D), one entry per cell.
+        With cell_batch_indices, memory has shape (B, S, D), one entry per image.
+        """
         x_unsq = x.unsqueeze(0)
 
         if batch_mask is not None:
