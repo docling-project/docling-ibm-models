@@ -15,9 +15,14 @@ def per_cell_boxes(head, cells, memory, indices):
     x = head.input_norm(head.input_proj(cells))
     memory = head.kv_norm(head.kv_proj(memory[indices]))
     mask = indices[:, None] == indices[None, :]
-    # The layer's original API treats each cell as a separate attention batch.
+    # Stock attention treats each cell as a separate attention batch.
     for layer in head.layers:
-        x = layer(x, memory, mask)
+        queries = x.unsqueeze(0)
+        output, _ = layer.self_attn(queries, queries, queries, attn_mask=~mask)
+        x = layer.self_attn_norm(x + output.squeeze(0))
+        output, _ = layer.cross_attn(x.unsqueeze(1), memory, memory)
+        x = layer.cross_attn_norm(x + output.squeeze(1))
+        x = layer.ffn_norm(x + layer.ffn(x))
     return _cxcywh_to_xyxy(torch.sigmoid(head.bbox_mlp(x)))
 
 
