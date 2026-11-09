@@ -7,6 +7,9 @@ import docling_ibm_models.tableformer.settings as s
 from docling_ibm_models.tableformer.models.common.base_model import BaseModel
 from docling_ibm_models.tableformer.models.table04_rs.bbox_decoder_rs import BBoxDecoder
 from docling_ibm_models.tableformer.models.table04_rs.encoder04_rs import Encoder04
+from docling_ibm_models.tableformer.models.table04_rs.tag_decoder_rs import (
+    TagDecoders,
+)
 from docling_ibm_models.tableformer.models.table04_rs.transformer_rs import (
     Tag_Transformer,
 )
@@ -86,6 +89,8 @@ class TableModel04_rs(BaseModel, nn.Module):
             self._dropout,
         ).to(device)
 
+        self._tag_decoders = None
+
     _logger = None
 
     def _log(self):
@@ -127,162 +132,98 @@ class TableModel04_rs(BaseModel, nn.Module):
         outputs_coord : tensor(x, 4)
             Coords of predicted bboxes. x is the number of bboxes. Each bbox is in [cxcywh] format
         """
+        return self.predict_batch(imgs, max_steps)[0]
+
+    @torch.no_grad()
+    def predict_batch(self, imgs, max_steps):
+        r"""
+        Inference for several tables at once.
+
+        Parameters
+        ----------
+        imgs : tensor FloatTensor - torch.Size([n, 3, 448, 448])
+            Preprocessed table images
+        max_steps : int
+            Maximum number of tags per table
+
+        Returns
+        -------
+        list of (seq, outputs_class, outputs_coord), one per table, as predict()
+        """
         AggProfiler().begin("predict_total", self._prof)
-
-        # Invoke encoder
         self._tag_transformer.eval()
-        enc_out = self._encoder(imgs)
-        AggProfiler().end("model_encoder", self._prof)
+        max_steps = min(max_steps, self._max_pred_len)
+        if self._tag_decoders is None:
+            self._tag_decoders = TagDecoders(self, self._max_pred_len)
+        decoders = self._tag_decoders
 
-        word_map = self._init_data["word_map"]["word_map_tag"]
+        results = []
+        with decoders.lock:
+            for s in range(0, imgs.size(0), decoders.max_batch_size):
+                chunk = imgs[s : s + decoders.max_batch_size]
+                # The encoders run per table: batching the CNN changes the
+                # results by more than float noise (different conv kernels)
+                encoded = [self._encode(chunk[i : i + 1]) for i in range(chunk.size(0))]
+                memory = torch.cat([m for _, m in encoded], dim=1)
+                AggProfiler().begin("model_tag_transformer_decoder", self._prof)
+                seqs, hidden = decoders.get(chunk.size(0)).decode(memory, max_steps)
+                AggProfiler().end("model_tag_transformer_decoder", self._prof)
+                for i, seq in enumerate(seqs):
+                    results.append(self._table_output(seq, hidden[:, i], encoded[i][0]))
+        AggProfiler().end("predict_total", self._prof)
+        return results
+
+    def _encode(self, img):
+        r"""
+        CNN encoder and tag transformer encoder of one table.
+
+        Returns the CNN output (1, 28, 28, C) and the encoder memory (784, 1, 512).
+        """
+        enc_out = self._encoder(img)
+        AggProfiler().end("model_encoder", self._prof)
         n_heads = self._tag_transformer._n_heads
-        # [1, 28, 28, 512]
         encoder_out = self._tag_transformer._input_filter(
             enc_out.permute(0, 3, 1, 2)
         ).permute(0, 2, 3, 1)
-
         batch_size = encoder_out.size(0)
         encoder_dim = encoder_out.size(-1)
         enc_inputs = encoder_out.view(batch_size, -1, encoder_dim).to(self._device)
         enc_inputs = enc_inputs.permute(1, 0, 2)
         positions = enc_inputs.shape[0]
-
         encoder_mask = torch.zeros(
             (batch_size * n_heads, positions, positions), device=self._device
         ) == torch.ones(
             (batch_size * n_heads, positions, positions), device=self._device
         )
-
-        # Invoking tag transformer encoder before the loop to save time
         AggProfiler().begin("model_tag_transformer_encoder", self._prof)
-        encoder_out = self._tag_transformer._encoder(enc_inputs, mask=encoder_mask)
+        memory = self._tag_transformer._encoder(enc_inputs, mask=encoder_mask)
         AggProfiler().end("model_tag_transformer_encoder", self._prof)
+        return enc_out, memory
 
-        decoded_tags = (
-            torch.LongTensor([word_map["<start>"]]).to(self._device).unsqueeze(1)
-        )
-        output_tags = []
-        cache = None
-        tag_H_buf = []
+    def _table_output(self, seq, hidden, enc_out):
+        r"""
+        Bboxes of one decoded table.
 
-        skip_next_tag = True
-        prev_tag_ucel = False
-        line_num = 0
-
-        # Populate bboxes_to_merge, indexes of first lcel, and last cell in a span
-        first_lcel = True
-        bboxes_to_merge = {}
-        cur_bbox_ind = -1
-        bbox_ind = 0
-
-        # i = 0
-        while len(output_tags) < self._max_pred_len:
-            decoded_embedding = self._tag_transformer._embedding(decoded_tags)
-            decoded_embedding = self._tag_transformer._positional_encoding(
-                decoded_embedding
-            )
-            AggProfiler().begin("model_tag_transformer_decoder", self._prof)
-            decoded, cache = self._tag_transformer._decoder(
-                decoded_embedding,
-                encoder_out,
-                cache,
-                memory_key_padding_mask=encoder_mask,
-            )
-            AggProfiler().end("model_tag_transformer_decoder", self._prof)
-            # Grab last feature to produce token
-            AggProfiler().begin("model_tag_transformer_fc", self._prof)
-            logits = self._tag_transformer._fc(decoded[-1, :, :])  # 1, vocab_size
-            AggProfiler().end("model_tag_transformer_fc", self._prof)
-            new_tag = logits.argmax(1).item()
-
-            # STRUCTURE ERROR CORRECTION
-            # Correction for first line xcel...
-            if line_num == 0:
-                if new_tag == word_map["xcel"]:
-                    new_tag = word_map["lcel"]
-
-            # Correction for ucel, lcel sequence...
-            if prev_tag_ucel:
-                if new_tag == word_map["lcel"]:
-                    new_tag = word_map["fcel"]
-
-            # End of generation
-            if new_tag == word_map["<end>"]:
-                output_tags.append(new_tag)
-                decoded_tags = torch.cat(
-                    [
-                        decoded_tags,
-                        torch.LongTensor([new_tag]).unsqueeze(1).to(self._device),
-                    ],
-                    dim=0,
-                )  # current_output_len, 1
-                break
-            output_tags.append(new_tag)
-
-            # BBOX PREDICTION
-
-            # MAKE SURE TO SYNC NUMBER OF CELLS WITH NUMBER OF BBOXes
-            if not skip_next_tag:
-                if new_tag in [
-                    word_map["fcel"],
-                    word_map["ecel"],
-                    word_map["ched"],
-                    word_map["rhed"],
-                    word_map["srow"],
-                    word_map["nl"],
-                    word_map["ucel"],
-                ]:
-                    # GENERATE BBOX HERE TOO (All other cases)...
-                    tag_H_buf.append(decoded[-1, :, :])
-                    if first_lcel is not True:
-                        # Mark end index for horizontal cell bbox merge
-                        bboxes_to_merge[cur_bbox_ind] = bbox_ind
-                    bbox_ind += 1
-
-            # Treat horisontal span bboxes...
-            if new_tag != word_map["lcel"]:
-                first_lcel = True
-            else:
-                if first_lcel:
-                    # GENERATE BBOX HERE (Beginning of horisontal span)...
-                    tag_H_buf.append(decoded[-1, :, :])
-                    first_lcel = False
-                    # Mark start index for cell bbox merge
-                    cur_bbox_ind = bbox_ind
-                    bboxes_to_merge[cur_bbox_ind] = -1
-                    bbox_ind += 1
-
-            if new_tag in [word_map["nl"], word_map["ucel"], word_map["xcel"]]:
-                skip_next_tag = True
-            else:
-                skip_next_tag = False
-
-            # Register ucel in sequence...
-            if new_tag == word_map["ucel"]:
-                prev_tag_ucel = True
-            else:
-                prev_tag_ucel = False
-
-            decoded_tags = torch.cat(
-                [
-                    decoded_tags,
-                    torch.LongTensor([new_tag]).unsqueeze(1).to(self._device),
-                ],
-                dim=0,
-            )  # current_output_len, 1
-        seq = decoded_tags.squeeze().tolist()
+        Parameters
+        ----------
+        seq : list of int
+            <start>, the generated tags and <end> (if reached)
+        hidden : tensor (steps, 512)
+            Last decoder layer output of every step
+        enc_out : tensor (1, 28, 28, C)
+            CNN output of the table
+        """
+        word_map = self._init_data["word_map"]["word_map_tag"]
+        cell_steps, bboxes_to_merge = self._cell_steps(seq[1:], word_map)
 
         if self._bbox:
             AggProfiler().begin("model_bbox_decoder", self._prof)
             outputs_class, outputs_coord = self._bbox_decoder.inference(
-                enc_out, tag_H_buf
+                enc_out, hidden[cell_steps]
             )
             AggProfiler().end("model_bbox_decoder", self._prof)
         else:
-            outputs_class, outputs_coord = None, None
-
-        outputs_class.to(self._device)
-        outputs_coord.to(self._device)
+            return seq, None, None
 
         ########################################################################################
         # Merge First and Last predicted BBOX for each span, according to bboxes_to_merge
@@ -315,14 +256,56 @@ class TableModel04_rs(BaseModel, nn.Module):
         else:
             outputs_class1 = torch.empty(0)
 
-        outputs_class = outputs_class1
-        outputs_coord = outputs_coord1
-
-        # Do the rest of the steps...
-        AggProfiler().end("predict_total", self._prof)
         num_tab_cells = seq.count(4) + seq.count(5)
         num_rows = seq.count(9)
         self._log().info(
             "OTSL predicted table cells#: {}; rows#: {}".format(num_tab_cells, num_rows)
         )
-        return seq, outputs_class, outputs_coord
+        return seq, outputs_class1, outputs_coord1
+
+    @staticmethod
+    def _cell_steps(tags, word_map):
+        r"""
+        The steps whose decoder output feeds the bbox decoder, and the first and last
+        bbox of every horizontal span, from the generated tags.
+
+        Returns
+        -------
+        cell_steps : list of int
+        bboxes_to_merge : dict
+            Index of the first bbox of a span -> index of its last bbox (-1: none)
+        """
+        cell_tags = {
+            word_map[t] for t in ["fcel", "ecel", "ched", "rhed", "srow", "nl", "ucel"]
+        }
+        skip_after = {word_map["nl"], word_map["ucel"], word_map["xcel"]}
+        lcel = word_map["lcel"]
+
+        cell_steps = []
+        bboxes_to_merge = {}
+        skip_next_tag = True
+        first_lcel = True
+        cur_bbox_ind = -1
+        bbox_ind = 0
+        for step, tag in enumerate(tags):
+            if tag == word_map["<end>"]:
+                break
+            # MAKE SURE TO SYNC NUMBER OF CELLS WITH NUMBER OF BBOXes
+            if not skip_next_tag and tag in cell_tags:
+                cell_steps.append(step)
+                if first_lcel is not True:
+                    # Mark end index for horizontal cell bbox merge
+                    bboxes_to_merge[cur_bbox_ind] = bbox_ind
+                bbox_ind += 1
+            # Treat horizontal span bboxes...
+            if tag != lcel:
+                first_lcel = True
+            elif first_lcel:
+                # Beginning of horizontal span
+                cell_steps.append(step)
+                first_lcel = False
+                cur_bbox_ind = bbox_ind
+                bboxes_to_merge[cur_bbox_ind] = -1
+                bbox_ind += 1
+            skip_next_tag = tag in skip_after
+        return cell_steps, bboxes_to_merge

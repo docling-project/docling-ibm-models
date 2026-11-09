@@ -130,9 +130,15 @@ class BBoxDecoder(nn.Module):
             self._logger = s.get_custom_logger(self.__class__.__name__, LOG_LEVEL)
         return self._logger
 
-    def inference(self, encoder_out, tag_H):
+    def inference(self, encoder_out, tag_H, chunk_size=128):
         """
         Inference on test images with beam search
+
+        :param encoder_out: CNN output of one table (1, 28, 28, C)
+        :param tag_H: tag decoder output per cell, a tensor (num_cells, tag_decoder_dim)
+                      or a list of (1, tag_decoder_dim) tensors
+        :param chunk_size: cells decoded together (bounds the attention intermediate
+                           of num_cells x num_pixels x attention_dim)
         """
         if hasattr(self, "_input_filter"):
             encoder_out = self._input_filter(encoder_out.permute(0, 3, 1, 2)).permute(
@@ -144,14 +150,19 @@ class BBoxDecoder(nn.Module):
         # Flatten encoding (1, num_pixels, encoder_dim)
         encoder_out = encoder_out.view(1, -1, encoder_dim)
 
-        num_cells = len(tag_H)
+        if isinstance(tag_H, (list, tuple)):
+            if len(tag_H) == 0:
+                return torch.empty(0), torch.empty(0)
+            tag_H = torch.cat(tag_H)
+        num_cells = tag_H.size(0)
+        if num_cells == 0:
+            return torch.empty(0), torch.empty(0)
+
         predictions_bboxes = []
         predictions_classes = []
-
-        for c_id in range(num_cells):
-            # Start decoding
-            h = self._init_hidden_state(encoder_out, 1)
-            cell_tag_H = tag_H[c_id]
+        for start in range(0, num_cells, chunk_size):
+            cell_tag_H = tag_H[start : start + chunk_size]
+            h = self._init_hidden_state(encoder_out, cell_tag_H.size(0))
             awe, _ = self._attention(encoder_out, cell_tag_H, h)
             gate = self._sigmoid(self._f_beta(h))
             awe = gate * awe
@@ -159,14 +170,4 @@ class BBoxDecoder(nn.Module):
 
             predictions_bboxes.append(self._bbox_embed(h).sigmoid())
             predictions_classes.append(self._class_embed(h))
-        if len(predictions_bboxes) > 0:
-            predictions_bboxes = torch.stack([x[0] for x in predictions_bboxes])
-        else:
-            predictions_bboxes = torch.empty(0)
-
-        if len(predictions_classes) > 0:
-            predictions_classes = torch.stack([x[0] for x in predictions_classes])
-        else:
-            predictions_classes = torch.empty(0)
-
-        return predictions_classes, predictions_bboxes
+        return torch.cat(predictions_classes), torch.cat(predictions_bboxes)
