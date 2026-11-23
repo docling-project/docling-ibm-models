@@ -160,3 +160,78 @@ def test_band_matched_orphans_use_normal_path():
     assert assigned["post"] >= 0, (
         f"in-band match should have non-negative confidence, got {assigned['post']}"
     )
+
+
+def test_far_orphan_is_not_joined_onto_a_filled_cell():
+    """A heading word in the row band but far from the column must not be
+    concatenated onto a cell that already has its text.
+
+    See https://github.com/docling-project/docling-ibm-models/issues/188.
+    """
+    proc = _make_proc()
+    table_cells = [
+        {
+            "cell_id": 0,
+            "row_id": 0,
+            "column_id": 0,
+            "label": "body",
+            "cell_class": 2,
+            "bbox": [100, 10, 180, 30],
+        },
+    ]
+    pdf_cells = [
+        {"id": 1, "bbox": [110, 12, 170, 28], "text": "Alex Chen"},
+        # Whole word sits to the right of the column. Gap is 400 - 180 = 220pt,
+        # the shape of a heading token snapped onto the Owner cell.
+        {"id": 2, "bbox": [400, 12, 460, 28], "text": "Report"},
+    ]
+    matches = {"1": [{"iou": 0.9, "table_cell_id": 0}]}
+
+    new_matches, new_table_cells, _ = proc._pick_orphan_cells(
+        tab_rows=1,
+        tab_cols=1,
+        max_cell_id=0,
+        table_cells=table_cells,
+        pdf_cells=pdf_cells,
+        matches=matches,
+    )
+
+    assert "2" not in new_matches, "far token was written into the filled cell"
+    assert new_matches["1"][0]["table_cell_id"] == 0
+    # The cell box stays where the real text is.
+    assert new_table_cells[0]["bbox"] == [100, 10, 180, 30]
+
+
+def test_orphan_just_outside_a_filled_cell_still_joins_it():
+    """A word that only overruns the predicted box still belongs to the cell."""
+    proc = _make_proc()
+    table_cells = [
+        {
+            "cell_id": 0,
+            "row_id": 0,
+            "column_id": 0,
+            "label": "body",
+            "cell_class": 2,
+            "bbox": [100, 10, 180, 30],
+        },
+    ]
+    pdf_cells = [
+        {"id": 1, "bbox": [110, 12, 160, 28], "text": "Alex"},
+        # Entirely outside the column, 4pt past its right edge.
+        {"id": 2, "bbox": [184, 12, 230, 28], "text": "Chen"},
+    ]
+    matches = {"1": [{"iou": 0.9, "table_cell_id": 0}]}
+
+    new_matches, _, _ = proc._pick_orphan_cells(
+        tab_rows=1,
+        tab_cols=1,
+        max_cell_id=0,
+        table_cells=table_cells,
+        pdf_cells=pdf_cells,
+        matches=matches,
+    )
+
+    assert "2" in new_matches, "overrunning word was dropped from its cell"
+    assigned = new_matches["2"][0]
+    assert assigned["table_cell_id"] == 0
+    assert assigned["post"] < 0

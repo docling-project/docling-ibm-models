@@ -9,6 +9,24 @@ from docling_ibm_models.tableformer.data_management.tf_cell_matcher import CellM
 LOG_LEVEL = logging.INFO
 # LOG_LEVEL = logging.DEBUG
 
+# A pdf word already outside a column is still part of a filled cell when it
+# merely overruns the predicted box. Past this gap it is a different piece of
+# text, and joining it silently corrupts the cell (#188). An empty slot keeps
+# the unbounded snap, so a totals value that missed every column is recovered
+# (#159).
+_MAX_OCCUPIED_COLUMN_SNAP_GAP = 48.0
+
+
+def _horizontal_gap(bbox, span: tuple[float, float]) -> float:
+    """Distance from ``bbox`` to the column x-span. 0 when they touch."""
+    x0, x1 = bbox[0], bbox[2]
+    left, right = span
+    if x1 < left:
+        return left - x1
+    if x0 > right:
+        return x0 - right
+    return 0.0
+
 
 class MatchingPostProcessor:
     r"""
@@ -844,6 +862,14 @@ class MatchingPostProcessor:
         # id -> pdf_cell, so the nearest-row/column fallbacks below look cells up
         # in O(1) instead of rescanning pdf_cells for every orphan (O(P) each).
         pdf_cell_by_id = {str(pdf_cell["id"]): pdf_cell for pdf_cell in pdf_cells}
+        # Slots that already own a pdf word before this step. The nearest-column
+        # fallback may still add a word that overran the box, but not one that
+        # sits far outside it (#188). Taken before new_matches grows.
+        filled_cell_ids = {
+            match["table_cell_id"]
+            for cell_matches in matches.values()
+            for match in cell_matches
+        }
 
         # Identify orphan rows (START)
         orphan_rows = []
@@ -976,6 +1002,7 @@ class MatchingPostProcessor:
         # Cache each column's X-centroid so we can fall back to nearest-column
         # assignment for orphans that match a row band but no column band.
         col_centroids: dict[int, float] = {}
+        col_spans: dict[int, tuple[float, float]] = {}
 
         for col in range(tab_cols):
             bbox_x1s = []  # y2 > y1
@@ -1013,6 +1040,7 @@ class MatchingPostProcessor:
             # Cache centroid for nearest-column fallback (see orphan-rows loop).
             if col_x1 >= 0 and col_x2 >= 0:
                 col_centroids[col] = (col_x1 + col_x2) / 2
+                col_spans[col] = (col_x1, col_x2)
 
             # Find "orphan" cells that intersect the band
             for pdf_cell in pdf_cells:
@@ -1153,6 +1181,32 @@ class MatchingPostProcessor:
                     ((c, abs(cell_cx - cx)) for c, cx in col_centroids.items()),
                     key=lambda t: t[1],
                 )
+                # An empty slot still takes a far snap: that is the totals value
+                # whose predicted column never reached it (#159). A slot that
+                # already has text only takes a word that overran its box.
+                # Anything farther is a different token, and joining it writes
+                # text the page does not contain (#188).
+                span = col_spans.get(new_column_id)
+                gap = _horizontal_gap(pdf_bbox, span) if span is not None else min_dist
+                slot_id = next(
+                    (
+                        cell["cell_id"]
+                        for cell in table_cells
+                        if cell["row_id"] == new_row_id
+                        and cell["column_id"] == new_column_id
+                    ),
+                    None,
+                )
+                if slot_id in filled_cell_ids and gap > _MAX_OCCUPIED_COLUMN_SNAP_GAP:
+                    self._log().warning(
+                        "Orphan pdf_cell %s not joined to column %s: %.1fpt "
+                        "outside a cell that already has text (row=%s)",
+                        pdf_cell_id,
+                        new_column_id,
+                        gap,
+                        new_row_id,
+                    )
+                    continue
                 # confidence < 0 marks "nearest-column fallback" so downstream
                 # consumers can distinguish high-confidence band matches from
                 # snapped fallbacks if they care.
