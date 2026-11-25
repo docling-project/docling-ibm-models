@@ -643,7 +643,7 @@ typecheck = [
 
 [package.metadata]
 requires-dist = [
-    { name = "huggingface-hub", specifier = ">=0.23,<2" },
+    { name = "huggingface-hub", specifier = ">=0.23,<3" },
     { name = "numpy", specifier = ">=1.24.4,<3.0.0" },
     { name = "opencv-python", marker = "extra == 'opencv-python'", specifier = ">=4.6.0.66,<5.0.0.0" },
     { name = "opencv-python-headless", marker = "extra == 'opencv-python-headless'", specifier = ">=4.6.0.66,<5.0.0.0" },
