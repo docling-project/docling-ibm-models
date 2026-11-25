@@ -27,6 +27,7 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
 ]
 requires-python = '>=3.10,<4.0'
 dependencies = [
@@ -40,8 +41,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-opencv-python-headless = ['opencv-python-headless (>=4.6.0.66,<5.0.0.0)']
-opencv-python = ['opencv-python (>=4.6.0.66,<5.0.0.0)']
+opencv-python-headless = ['opencv-python-headless (>=4.6.0.66,<6.0.0.0)']
+opencv-python = ['opencv-python (>=4.6.0.66,<6.0.0.0)']
 
 [project.urls]
 homepage = "https://github.com/docling-project/docling-ibm-models"
@@ -51,20 +52,20 @@ changelog = "https://github.com/docling-project/docling-ibm-models/blob/main/CHA
 
 [dependency-groups]
 typecheck = [
-    "ty==0.0.33",
-    "types-setuptools~=70.3",
+    "ty==0.0.110",
+    "types-setuptools>=70.3",
 ]
 pr-fast-checks = [
     { include-group = "typecheck" },
-    "ruff==0.16.10",
+    "ruff==0.17.6",
 ]
 dev = [
     { include-group = "typecheck" },
-    "opencv-python-headless (>=4.6.0.66,<5.0.0.0)",
+    "opencv-python-headless (>=4.6.0.66,<6.0.0.0)",
     "prek>=0.3.10",
-    "ruff==0.16.10",
+    "ruff==0.17.6",
     "coverage~=7.6",
-    "pytest~=8.3",
+    "pytest>=8.3,<10",
     "pytest-cov>=6.1.1",
     "pytest-dependency~=0.6",
     "pytest-xdist~=3.3",
@@ -132,3 +133,4 @@ allowed-unresolved-imports = [
 
 [tool.ty.terminal]
 output-format = "concise"
+error-on-warning = false
