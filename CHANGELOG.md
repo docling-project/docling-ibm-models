@@ -1,3 +1,9 @@
+## [v4.0.5](https://github.com/docling-project/docling-ibm-models/releases/tag/v4.0.5) - 2026-11-25
+
+### Fix
+
+* Allow huggingface_hub 2.x ([#207](https://github.com/docling-project/docling-ibm-models/issues/207)) ([`4f8bc20`](https://github.com/docling-project/docling-ibm-models/commit/4f8bc20708cb9c41ef9c3c9e5625ce220010b961))
+
 ## [v4.0.4](https://github.com/docling-project/docling-ibm-models/releases/tag/v4.0.4) - 2026-10-21
 
 ### Fix
