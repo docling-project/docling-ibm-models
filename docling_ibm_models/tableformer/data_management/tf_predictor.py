@@ -226,6 +226,32 @@ class TFPredictor:
             self._logger = s.get_custom_logger(self.__class__.__name__, LOG_LEVEL)
         return self._logger
 
+    @staticmethod
+    def _reached_max_steps(tag_seq, end_tag_id):
+        r"""
+        Tell if the tag decoder ran out of steps instead of emitting "<end>"
+
+        A sequence that does not terminate is not a usable table structure: the
+        decoder was still generating when it reached max_steps.
+        """
+        return len(tag_seq) > 0 and tag_seq[-1] != end_tag_id
+
+    def _flag_unterminated(self, prediction):
+        r"""
+        Record in the prediction if the tag sequence reached max_steps, and warn
+        """
+        end_tag_id = self._word_map["word_map_tag"]["<end>"]
+        reached = self._reached_max_steps(prediction["tag_seq"], end_tag_id)
+        prediction["reached_max_steps"] = reached
+        if reached:
+            self._log().warning(
+                "TableFormer reached max_steps ({}) without an end token: "
+                "the predicted table structure is likely degenerate".format(
+                    self._config["predict"]["max_steps"]
+                )
+            )
+        return reached
+
     def _deletebbox(self, listofbboxes, index):
         newlist = []
         for i in range(len(listofbboxes)):
@@ -659,6 +685,7 @@ class TFPredictor:
             prediction["tag_seq"] = pred_tag_seq
             prediction["rs_seq"] = self._get_html_tags(pred_tag_seq)
             prediction["html_seq"] = otsl_to_html(prediction["rs_seq"], False)
+            self._flag_unterminated(prediction)
         # Remove implied padding from bbox predictions,
         # that we added on image pre-processing stage
         self._log().debug("----- rs_seq -----")
@@ -709,6 +736,7 @@ class TFPredictor:
             # tf_output = self._merge_tf_output_dummy(docling_output)
             tf_output = docling_output
 
+        matching_details["reached_max_steps"] = prediction["reached_max_steps"]
         return tf_output, matching_details
 
     def predict(
@@ -790,6 +818,7 @@ class TFPredictor:
             prediction["tag_seq"] = pred_tag_seq
             prediction["rs_seq"] = self._get_html_tags(pred_tag_seq)
             prediction["html_seq"] = otsl_to_html(prediction["rs_seq"], False)
+            self._flag_unterminated(prediction)
         # Remove implied padding from bbox predictions,
         # that we added on image pre-processing stage
         self._log().debug("----- rs_seq -----")
@@ -849,6 +878,7 @@ class TFPredictor:
         # with deduplicated table cells
         tf_output = self._merge_tf_output(docling_output, matching_details["pdf_cells"])
 
+        matching_details["reached_max_steps"] = prediction["reached_max_steps"]
         return tf_output, matching_details
 
     def _generate_tf_response_dummy(self, table_cells):
