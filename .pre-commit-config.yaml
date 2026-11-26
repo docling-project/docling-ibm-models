@@ -15,7 +15,7 @@ repos:
       - id: check-added-large-files
         args: [--maxkb=5120]
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.10
+    rev: v0.17.6
     hooks:
       - id: ruff
         name: "Ruff linter"
