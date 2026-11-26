@@ -35,6 +35,8 @@ from docling_ibm_models.tableformer.utils.app_profiler import AggProfiler
 # Custom Output Classes
 # =============================================================================
 
+KVCache = Tuple[torch.Tensor, torch.Tensor]
+
 
 @dataclass
 class TableFormerV2Output(ModelOutput):
@@ -56,7 +58,7 @@ class TableFormerV2Output(ModelOutput):
     logits: Optional[torch.Tensor] = None
     hidden_states: Optional[torch.Tensor] = None
     predicted_bboxes: Optional[torch.Tensor] = None
-    past_key_values: Optional[Tuple[Tuple[torch.Tensor]]] = None
+    past_key_values: Optional[KVCache] = None
 
 
 # =============================================================================
@@ -207,6 +209,105 @@ class SimpleFPN(nn.Module):
 # =============================================================================
 
 
+class CachedMHA:
+    def __init__(self, mha: torch.nn.MultiheadAttention):
+        self.mha = mha
+        E_dim = mha.embed_dim
+        self.num_heads = mha.num_heads
+        self.head_dim = E_dim // mha.num_heads
+
+    def get_view(self, x):
+        # x is (batch_size, seq_len, embed_dim)
+        return x.view(x.size(0), x.size(1), self.num_heads, self.head_dim).transpose(
+            1, 2
+        )
+
+    def _attention(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        attn_mask: Optional[torch.Tensor] = None,
+        key_padding_mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        if key_padding_mask is not None:
+            padding_mask = torch.zeros(
+                q.size(0), 1, 1, k.size(2), dtype=q.dtype, device=q.device
+            )
+            padding_mask.masked_fill_(key_padding_mask[:, None, None, :], float("-inf"))
+            attn_mask = padding_mask if attn_mask is None else attn_mask + padding_mask
+
+        out = torch.nn.functional.scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            attn_mask=attn_mask,
+            dropout_p=0.0,
+            is_causal=False,
+        )
+
+        out = (
+            out.transpose(1, 2)
+            .contiguous()
+            .view(out.size(0), out.size(2), self.num_heads * self.head_dim)
+        )
+        out = self.mha.out_proj(out)
+        return out
+
+
+class CachedSelfAttention(CachedMHA):
+    def __call__(
+        self,
+        x: torch.Tensor,
+        cached_kv: Optional[KVCache],
+        attn_mask: Optional[torch.Tensor] = None,
+        key_padding_mask: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, KVCache]:
+        qkv = torch.nn.functional.linear(
+            x, self.mha.in_proj_weight, self.mha.in_proj_bias
+        )
+        q, k, v = (self.get_view(projection) for projection in qkv.chunk(3, dim=-1))
+
+        cached_k, cached_v = cached_kv if cached_kv is not None else (None, None)
+        full_k = torch.cat([cached_k, k], dim=2) if cached_k is not None else k
+        full_v = torch.cat([cached_v, v], dim=2) if cached_v is not None else v
+        return (
+            self._attention(q, full_k, full_v, attn_mask, key_padding_mask),
+            (full_k, full_v),
+        )
+
+
+class CachedCrossAttention(CachedMHA):
+    def __call__(
+        self,
+        x: torch.Tensor,
+        memory: torch.Tensor,
+        cached_kv: Optional[KVCache],
+        attn_mask: Optional[torch.Tensor] = None,
+        key_padding_mask: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, KVCache]:
+        embed_dim = self.mha.embed_dim
+        q = self.get_view(
+            torch.nn.functional.linear(
+                x,
+                self.mha.in_proj_weight[:embed_dim],
+                self.mha.in_proj_bias[:embed_dim],
+            )
+        )
+
+        if cached_kv is None:
+            kv = torch.nn.functional.linear(
+                memory,
+                self.mha.in_proj_weight[embed_dim:],
+                self.mha.in_proj_bias[embed_dim:],
+            )
+            k, v = (self.get_view(projection) for projection in kv.chunk(2, dim=-1))
+        else:
+            k, v = cached_kv
+
+        return self._attention(q, k, v, attn_mask, key_padding_mask), (k, v)
+
+
 class CachedTransformerDecoderLayer(nn.Module):
     r"""
     Cache-aware Transformer decoder layer for efficient autoregressive generation.
@@ -228,7 +329,9 @@ class CachedTransformerDecoderLayer(nn.Module):
         self.head_dim = d_model // nhead
 
         self.self_attn = nn.MultiheadAttention(d_model, nhead, batch_first=True)
+        self.cached_self_attn = CachedSelfAttention(self.self_attn)
         self.multihead_attn = nn.MultiheadAttention(d_model, nhead, batch_first=True)
+        self.cached_cross_attn = CachedCrossAttention(self.multihead_attn)
 
         self.linear1 = nn.Linear(d_model, dim_feedforward)
         self.linear2 = nn.Linear(dim_feedforward, d_model)
@@ -243,25 +346,18 @@ class CachedTransformerDecoderLayer(nn.Module):
         x: torch.Tensor,
         attn_mask: Optional[torch.Tensor],
         key_padding_mask: Optional[torch.Tensor],
-        past_kv: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
+        past_kv: Optional[KVCache] = None,
         use_cache: bool = False,
-    ) -> Tuple[torch.Tensor, Optional[Tuple[torch.Tensor, torch.Tensor]]]:
-        k = v = x
-        if past_kv is not None:
-            past_k, past_v = past_kv
-            k = torch.cat([past_k, k], dim=1)
-            v = torch.cat([past_v, v], dim=1)
+    ) -> Tuple[torch.Tensor, Optional[KVCache]]:
 
-        attn_output, _ = self.self_attn(
+        attn_output, past_kv = self.cached_self_attn(
             x,
-            k,
-            v,
+            cached_kv=past_kv,
             attn_mask=attn_mask,
             key_padding_mask=key_padding_mask,
-            need_weights=False,
         )
 
-        present = (k, v) if use_cache else None
+        present = past_kv if use_cache else None
         return attn_output, present
 
     def _ca_block(
@@ -270,16 +366,18 @@ class CachedTransformerDecoderLayer(nn.Module):
         mem: torch.Tensor,
         attn_mask: Optional[torch.Tensor],
         key_padding_mask: Optional[torch.Tensor],
-    ) -> torch.Tensor:
-        attn_output, _ = self.multihead_attn(
+        past_kv: Optional[KVCache] = None,
+        use_cache: bool = False,
+    ) -> Tuple[torch.Tensor, Optional[KVCache]]:
+        attn_output, present_kv = self.cached_cross_attn(
             x,
             mem,
-            mem,
+            cached_kv=past_kv,
             attn_mask=attn_mask,
             key_padding_mask=key_padding_mask,
-            need_weights=False,
         )
-        return attn_output
+        present = present_kv if use_cache else None
+        return attn_output, present
 
     def forward(
         self,
@@ -289,21 +387,49 @@ class CachedTransformerDecoderLayer(nn.Module):
         memory_mask: Optional[torch.Tensor] = None,
         tgt_key_padding_mask: Optional[torch.Tensor] = None,
         memory_key_padding_mask: Optional[torch.Tensor] = None,
-        past_key_value: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
+        past_key_value: Optional[
+            Tuple[
+                KVCache,
+                KVCache,
+            ]
+        ] = None,
         use_cache: bool = False,
-    ) -> Tuple[torch.Tensor, Optional[Tuple[torch.Tensor, torch.Tensor]]]:
-        sa_out, present_kv = self._sa_block(
+    ) -> Tuple[
+        torch.Tensor,
+        Optional[
+            Tuple[
+                KVCache,
+                KVCache,
+            ]
+        ],
+    ]:
+        self_past_kv, cross_past_kv = (
+            past_key_value if past_key_value is not None else (None, None)
+        )
+        sa_out, self_present_kv = self._sa_block(
             tgt,
             tgt_mask,
             tgt_key_padding_mask,
-            past_kv=past_key_value,
+            past_kv=self_past_kv,
             use_cache=use_cache,
         )
         tgt = self.norm1(tgt + self.dropout(sa_out))
-        ca_out = self._ca_block(tgt, memory, memory_mask, memory_key_padding_mask)
+        ca_out, cross_present_kv = self._ca_block(
+            tgt,
+            memory,
+            memory_mask,
+            memory_key_padding_mask,
+            past_kv=cross_past_kv,
+            use_cache=use_cache,
+        )
         tgt = self.norm2(tgt + self.dropout(ca_out))
         ff = self.linear2(self.dropout(self.activation(self.linear1(tgt))))
         tgt = self.norm3(tgt + self.dropout(ff))
+        present_kv = (
+            (self_present_kv, cross_present_kv)
+            if self_present_kv is not None and cross_present_kv is not None
+            else None
+        )
         return tgt, present_kv
 
 
@@ -340,12 +466,36 @@ class CachedTransformerDecoder(nn.Module):
         memory_mask: Optional[torch.Tensor] = None,
         tgt_key_padding_mask: Optional[torch.Tensor] = None,
         memory_key_padding_mask: Optional[torch.Tensor] = None,
-        past_key_values: Optional[Tuple[Tuple[torch.Tensor, torch.Tensor], ...]] = None,
+        past_key_values: Optional[
+            Tuple[
+                Tuple[
+                    KVCache,
+                    KVCache,
+                ],
+                ...,
+            ]
+        ] = None,
         use_cache: bool = False,
-    ) -> Tuple[torch.Tensor, Optional[Tuple[Tuple[torch.Tensor, torch.Tensor], ...]]]:
-        next_past: Optional[List[Tuple[torch.Tensor, torch.Tensor]]] = (
-            [] if use_cache else None
-        )
+    ) -> Tuple[
+        torch.Tensor,
+        Optional[
+            Tuple[
+                Tuple[
+                    KVCache,
+                    KVCache,
+                ],
+                ...,
+            ]
+        ],
+    ]:
+        next_past: Optional[
+            List[
+                Tuple[
+                    KVCache,
+                    KVCache,
+                ]
+            ]
+        ] = [] if use_cache else None
         for i, layer in enumerate(self.layers):
             past = past_key_values[i] if past_key_values is not None else None
             tgt, present = layer(
@@ -677,6 +827,7 @@ class TableFormerV2(PreTrainedModel, GenerationMixin):
         past_key_values: Optional[Tuple] = None,
         use_cache: Optional[bool] = None,
         return_dict: bool = True,
+        predict_bboxes: bool = True,
     ) -> TableFormerV2Output:
         r"""
         Forward pass for inference.
@@ -697,6 +848,8 @@ class TableFormerV2(PreTrainedModel, GenerationMixin):
             Whether to use KV caching (default: True)
         return_dict : bool
             Whether to return a ModelOutput (default: True)
+        predict_bboxes : bool
+            Whether to predict bounding boxes (default: True)
 
         Returns
         -------
@@ -720,7 +873,7 @@ class TableFormerV2(PreTrainedModel, GenerationMixin):
             and len(past_key_values) > 0
             and past_key_values[0] is not None
         ):
-            past_length = past_key_values[0][0].shape[1]
+            past_length = past_key_values[0][0][0].shape[2]
 
         tgt = self.input_embedding(input_ids) + self._positional_encoding(
             batch_size, seq_len, offset=past_length
@@ -770,12 +923,14 @@ class TableFormerV2(PreTrainedModel, GenerationMixin):
             else cell_positions.new_empty(0)
         )
 
-        pred_bboxes = self.bbox_head(
-            cell_embeddings,
-            encoder_outputs["last_hidden_state"],
-            cell_batch_indices,
-            spatial_size=encoder_outputs.get("spatial_size", None),
-        )
+        pred_bboxes = None
+        if predict_bboxes:
+            pred_bboxes = self.bbox_head(
+                cell_embeddings,
+                encoder_outputs["last_hidden_state"],
+                cell_batch_indices,
+                spatial_size=encoder_outputs.get("spatial_size", None),
+            )
 
         if not return_dict:
             return (logits, decoded, pred_bboxes, present_kv)  # type: ignore[return-value]
@@ -786,6 +941,52 @@ class TableFormerV2(PreTrainedModel, GenerationMixin):
             predicted_bboxes=pred_bboxes,
             past_key_values=present_kv,
         )
+
+    def forward_bbox(self, input_ids, encoder_outputs, decoder_h):
+        prof_enabled = self._is_profiling_enabled()
+
+        output = TableFormerV2Output(
+            logits=None,
+            hidden_states=None,
+            predicted_bboxes=None,
+            past_key_values=None,
+        )
+
+        # Identify cell positions
+        cell_mask = torch.zeros_like(input_ids, dtype=torch.bool)
+        for cell_id in self.data_cells:
+            cell_mask |= input_ids == cell_id
+
+        cell_positions = torch.nonzero(cell_mask, as_tuple=False)
+        if cell_positions.numel() == 0:
+            return output  # No cells found, return empty output
+
+        cell_embeddings = decoder_h[cell_mask]
+        cell_batch_indices = cell_positions[:, 0]
+
+        if prof_enabled:
+            AggProfiler().begin("model_bbox_decoder", prof_enabled)
+        pred_bboxes = self.bbox_head(
+            cell_embeddings,
+            encoder_outputs["last_hidden_state"],
+            cell_batch_indices,
+            spatial_size=encoder_outputs.get("spatial_size", None),
+        )
+        if prof_enabled:
+            AggProfiler().end("model_bbox_decoder", prof_enabled)
+
+        cell_counts = cell_mask.sum(dim=1)
+        max_cells = int(cell_counts.max().item())
+        batched_bboxes = pred_bboxes.new_zeros(input_ids.size(0), max_cells, 4)
+        offset = 0
+        for batch_index, cell_count in enumerate(cell_counts.tolist()):
+            batched_bboxes[batch_index, :cell_count] = pred_bboxes[
+                offset : offset + cell_count
+            ]
+            offset += cell_count
+
+        output.predicted_bboxes = batched_bboxes
+        return output
 
     def prepare_inputs_for_generation(  # type: ignore[override]
         self,
@@ -849,6 +1050,7 @@ class TableFormerV2(PreTrainedModel, GenerationMixin):
             generated_ids = torch.full(
                 (batch_size, 1), tokenizer.bos_token_id, dtype=torch.long, device=device
             )
+            enc_dec_hs = []
             current_input = generated_ids
             past_key_values = None
 
@@ -861,68 +1063,37 @@ class TableFormerV2(PreTrainedModel, GenerationMixin):
                     past_key_values=past_key_values,
                     use_cache=True,
                     return_dict=True,
+                    predict_bboxes=False,
                 )
 
                 if outputs.logits is None:
                     raise ValueError("Model forward pass returned None logits")
                 next_token = outputs.logits[:, -1, :].argmax(dim=-1, keepdim=True)
                 generated_ids = torch.cat([generated_ids, next_token], dim=1)
+                enc_dec_hs.append(outputs.hidden_states)
                 past_key_values = outputs.past_key_values
                 current_input = next_token
 
                 if torch.all(next_token == tokenizer.eos_token_id):
                     break
 
-            # Final forward pass to get hidden states for bbox prediction
+            # Final forward pass to get last hidden state
             final_outputs = self.forward(
-                input_ids=generated_ids,
-                attention_mask=torch.ones_like(generated_ids),
+                input_ids=current_input,
+                attention_mask=None,
                 encoder_outputs=encoder_outputs,
-                past_key_values=None,
-                use_cache=False,
+                past_key_values=past_key_values,
+                use_cache=True,
                 return_dict=True,
+                predict_bboxes=False,
             )
-            hidden_states = final_outputs.hidden_states
+            enc_dec_hs.append(final_outputs.hidden_states)
 
-            # Find cell positions and predict bboxes
-            pred_bboxes = None
-            max_cells = 0
-            cell_positions_per_batch = []
-
-            for b in range(batch_size):
-                seq = generated_ids[b]
-                positions = []
-                for pos, tok in enumerate(seq.tolist()):
-                    if tok in self.data_cells:
-                        positions.append(pos)
-                cell_positions_per_batch.append(positions)
-                max_cells = max(max_cells, len(positions))
-
-            if max_cells > 0:
-                pred_bboxes = torch.zeros(batch_size, max_cells, 4, device=device)
-                spatial_size = encoder_outputs.get("spatial_size", None)
-
-                for b in range(batch_size):
-                    positions = cell_positions_per_batch[b]
-                    if positions:
-                        if hidden_states is None:
-                            raise ValueError(
-                                "Model forward pass returned None hidden_states"
-                            )
-                        cell_embs = hidden_states[b, positions, :]
-                        batch_indices = torch.zeros(
-                            len(positions), dtype=torch.long, device=device
-                        )
-                        enc_out = encoder_outputs["last_hidden_state"][b : b + 1]
-
-                        if prof_enabled:
-                            AggProfiler().begin("model_bbox_decoder", prof_enabled)
-                        bboxes = self.bbox_head(
-                            cell_embs, enc_out, batch_indices, spatial_size=spatial_size
-                        )
-                        if prof_enabled:
-                            AggProfiler().end("model_bbox_decoder", prof_enabled)
-                        pred_bboxes[b, : len(bboxes)] = bboxes
+            pred_bboxes = self.forward_bbox(
+                input_ids=generated_ids,
+                encoder_outputs=encoder_outputs,
+                decoder_h=torch.cat(enc_dec_hs, dim=1),
+            ).predicted_bboxes
 
         if prof_enabled:
             AggProfiler().end("predict_total", prof_enabled)
