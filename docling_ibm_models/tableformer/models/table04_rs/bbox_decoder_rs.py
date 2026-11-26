@@ -148,10 +148,11 @@ class BBoxDecoder(nn.Module):
         predictions_bboxes = []
         predictions_classes = []
 
-        for c_id in range(num_cells):
-            # Start decoding
-            h = self._init_hidden_state(encoder_out, 1)
-            cell_tag_H = tag_H[c_id]
+        # Cells are independent: decode them in chunks rather than one by one.
+        # The chunk bounds the (cells, num_pixels, attention_dim) attention input.
+        for c_id in range(0, num_cells, 128):
+            cell_tag_H = torch.cat(tag_H[c_id : c_id + 128])
+            h = self._init_hidden_state(encoder_out, cell_tag_H.size(0))
             awe, _ = self._attention(encoder_out, cell_tag_H, h)
             gate = self._sigmoid(self._f_beta(h))
             awe = gate * awe
@@ -160,12 +161,12 @@ class BBoxDecoder(nn.Module):
             predictions_bboxes.append(self._bbox_embed(h).sigmoid())
             predictions_classes.append(self._class_embed(h))
         if len(predictions_bboxes) > 0:
-            predictions_bboxes = torch.stack([x[0] for x in predictions_bboxes])
+            predictions_bboxes = torch.cat(predictions_bboxes)
         else:
             predictions_bboxes = torch.empty(0)
 
         if len(predictions_classes) > 0:
-            predictions_classes = torch.stack([x[0] for x in predictions_classes])
+            predictions_classes = torch.cat(predictions_classes)
         else:
             predictions_classes = torch.empty(0)
 
