@@ -780,12 +780,17 @@ class TableFormerV2(PreTrainedModel, GenerationMixin):
         if not return_dict:
             return (logits, decoded, pred_bboxes, present_kv)  # type: ignore[return-value]
 
-        return TableFormerV2Output(
+        output = TableFormerV2Output(
             logits=logits,
             hidden_states=decoded,
             predicted_bboxes=pred_bboxes,
-            past_key_values=present_kv,
         )
+        # Recent transformers rename a `past_key_values=` keyword passed to a
+        # ModelOutput to `cache`, which this dataclass has no field for. Setting
+        # the item keeps the field name on every supported transformers version.
+        if present_kv is not None:
+            output["past_key_values"] = present_kv
+        return output
 
     def prepare_inputs_for_generation(  # type: ignore[override]
         self,
